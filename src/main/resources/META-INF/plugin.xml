@@ -1,0 +1,38 @@
+<idea-plugin>
+    <id>dev.mittalyashu.ghstack</id>
+    <name>GH Stack</name>
+    <vendor url="https://github.com/mittalyashu">mittalyashu</vendor>
+
+    <description><![CDATA[
+        <p>A thin IntelliJ wrapper around the GitHub CLI <code>gh stack</code> extension.</p>
+        <ul>
+            <li>View the current stacked PR chain in the Git tool window</li>
+            <li>Check out a specific layer</li>
+            <li>Add a branch on top of the stack</li>
+            <li>Switch between locally tracked stacks</li>
+        </ul>
+        <p>Requires <a href="https://cli.github.com/">GitHub CLI</a> and
+        <code>gh extension install github/gh-stack</code>.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
+    <depends>Git4Idea</depends>
+
+    <resource-bundle>messages.GhStackBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <changesViewContent
+                tabName="GHStack"
+                className="dev.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"
+                predicateClassName="dev.mittalyashu.ghstack.vcs.GhStackContentPredicate"
+                displayNameSupplierClassName="dev.mittalyashu.ghstack.vcs.GhStackTabNameSupplier"/>
+
+        <toolWindow
+                id="GH Stack"
+                factoryClass="dev.mittalyashu.ghstack.ui.GhStackToolWindowFactory"
+                anchor="bottom"
+                icon="AllIcons.Vcs.Branch"
+                canCloseContents="false"/>
+    </extensions>
+</idea-plugin>
