@@ -29,6 +29,7 @@ import dev.mittalyashu.ghstack.model.StackLayer
 import dev.mittalyashu.ghstack.model.StackLoadResult
 import dev.mittalyashu.ghstack.model.StackView
 import dev.mittalyashu.ghstack.service.GhStackService
+import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import java.awt.BorderLayout
 import java.awt.event.MouseAdapter
@@ -71,11 +72,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         })
 
         project.messageBus.connect(this).subscribe(
-            GitRepositoryChangeListener.GIT_REPO_CHANGE,
+            GitRepository.GIT_REPO_CHANGE,
             GitRepositoryChangeListener { scheduleRefresh() },
         )
 
-        Disposer.register(this) {}
         scheduleRefresh()
     }
 
