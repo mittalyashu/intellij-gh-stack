@@ -22,14 +22,14 @@ class GhCli(private val workingDirectory: Path) {
     fun version(): GhResult = run("--version")
 
     private fun run(vararg args: String): GhResult {
-        val gh = PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS("gh")
+        val pkgx = PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS("pkgx")
             ?: return GhResult(
                 exitCode = 127,
                 stdout = "",
-                stderr = "GitHub CLI (gh) was not found on PATH.",
+                stderr = "pkgx was not found on PATH.",
             )
 
-        val commandLine = GeneralCommandLine(listOf(gh.absolutePath) + args.toList())
+        val commandLine = GeneralCommandLine(listOf(pkgx.absolutePath, "gh") + args.toList())
             .withWorkDirectory(workingDirectory.toFile())
             .withCharset(StandardCharsets.UTF_8)
             .withEnvironment(
