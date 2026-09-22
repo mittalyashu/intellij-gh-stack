@@ -117,10 +117,12 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 status.text = stackSummary(view)
                 list.emptyText.text = ""
             }
+
             is StackLoadResult.NotInStack -> {
                 status.text = GhStackBundle.message("status.not.in.stack")
                 list.emptyText.text = GhStackBundle.message("status.not.in.stack")
             }
+
             is StackLoadResult.Failed -> {
                 status.text = result.message
                 list.emptyText.text = result.message
@@ -233,7 +235,11 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 val result = command()
                 ApplicationManager.getApplication().invokeLater({
                     if (!result.succeeded) {
-                        Messages.showErrorDialog(project, result.errorText(), GhStackBundle.message("notification.error"))
+                        Messages.showErrorDialog(
+                            project,
+                            result.errorText(),
+                            GhStackBundle.message("notification.error")
+                        )
                     }
                     service.refreshGit()
                     refresh()
@@ -265,21 +271,38 @@ private class StackRowRenderer : ColoredListCellRenderer<StackRow>() {
                 append(value.name, SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 append("  trunk", SimpleTextAttributes.GRAY_ITALIC_ATTRIBUTES)
             }
+
             is StackRow.Layer -> {
                 val layer = value.layer
                 icon = if (layer.isCurrent) AllIcons.Nodes.Favorite else AllIcons.Vcs.Branch
                 val style = if (layer.isCurrent) {
-                    SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, JBColor.namedColor("Link.activeForeground", JBColor.BLUE))
+                    SimpleTextAttributes(
+                        SimpleTextAttributes.STYLE_BOLD,
+                        JBColor.namedColor("Link.activeForeground", JBColor.BLUE)
+                    )
                 } else {
                     SimpleTextAttributes.REGULAR_ATTRIBUTES
                 }
                 append(layer.name, style)
                 layer.pr?.let { append("  #${it.number}", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
-                if (layer.isCurrent) append("  ${GhStackBundle.message("branch.current")}", SimpleTextAttributes.GRAY_ITALIC_ATTRIBUTES)
-                if (layer.needsRebase) append("  ${GhStackBundle.message("branch.needs.rebase")}", SimpleTextAttributes.ERROR_ATTRIBUTES)
-                if (layer.isMerged) append("  ${GhStackBundle.message("branch.merged")}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                if (layer.isQueued) append("  ${GhStackBundle.message("branch.queued")}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                if (layer.isCurrent) append(
+                    "  ${GhStackBundle.message("branch.current")}",
+                    SimpleTextAttributes.GRAY_ITALIC_ATTRIBUTES
+                )
+                if (layer.needsRebase) append(
+                    "  ${GhStackBundle.message("branch.needs.rebase")}",
+                    SimpleTextAttributes.ERROR_ATTRIBUTES
+                )
+                if (layer.isMerged) append(
+                    "  ${GhStackBundle.message("branch.merged")}",
+                    SimpleTextAttributes.GRAYED_ATTRIBUTES
+                )
+                if (layer.isQueued) append(
+                    "  ${GhStackBundle.message("branch.queued")}",
+                    SimpleTextAttributes.GRAYED_ATTRIBUTES
+                )
             }
+
             null -> Unit
         }
     }
