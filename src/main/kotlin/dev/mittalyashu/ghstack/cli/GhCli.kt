@@ -1,14 +1,19 @@
 package dev.mittalyashu.ghstack.cli
 
+import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.configurations.PathEnvironmentVariableUtil
 import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.execution.process.ProcessOutput
 import com.intellij.openapi.diagnostic.Logger
+import dev.mittalyashu.ghstack.settings.GhStackSettings
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 
-class GhCli(private val workingDirectory: Path) {
+class GhCli(
+    private val workingDirectory: Path,
+    private val configuredPath: () -> String = { GhStackSettings.getInstance().ghExecutablePath },
+) {
     private val log = Logger.getInstance(GhCli::class.java)
 
     fun viewJson(): GhResult = run("stack", "view", "--json")
@@ -22,14 +27,20 @@ class GhCli(private val workingDirectory: Path) {
     fun version(): GhResult = run("--version")
 
     private fun run(vararg args: String): GhResult {
-        val pkgx = PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS("pkgx")
-            ?: return GhResult(
+        val invocation = GhInvocation.resolve(configuredPath()) { name ->
+            PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS(name)?.absolutePath
+        }
+        val command = when (invocation) {
+            is GhInvocation.Missing -> return GhResult(
                 exitCode = 127,
                 stdout = "",
-                stderr = "pkgx was not found on PATH.",
+                stderr = invocation.message,
             )
 
-        val commandLine = GeneralCommandLine(listOf(pkgx.absolutePath, "gh") + args.toList())
+            is GhInvocation.Ready -> invocation.command
+        }
+
+        val commandLine = GeneralCommandLine(command + args.toList())
             .withWorkDirectory(workingDirectory.toFile())
             .withCharset(StandardCharsets.UTF_8)
             .withEnvironment(
@@ -44,7 +55,16 @@ class GhCli(private val workingDirectory: Path) {
             )
 
         log.debug("Running: ${commandLine.commandLineString} in $workingDirectory")
-        val output: ProcessOutput = CapturingProcessHandler(commandLine).runProcess(60_000)
+        val output: ProcessOutput = try {
+            CapturingProcessHandler(commandLine).runProcess(60_000)
+        } catch (e: ExecutionException) {
+            log.warn("Could not start ${command.first()}", e)
+            return GhResult(
+                exitCode = 127,
+                stdout = "",
+                stderr = "Could not start ${command.first()}: ${e.message ?: e.javaClass.simpleName}",
+            )
+        }
         return GhResult(
             exitCode = output.exitCode,
             stdout = output.stdout,

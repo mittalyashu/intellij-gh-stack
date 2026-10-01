@@ -75,7 +75,7 @@ class GhStackService(private val project: Project) {
         val lower = text.lowercase()
         return when {
             lower.contains("no such file") || lower.contains("not found") ->
-                "GitHub CLI (gh) was not found on PATH."
+                "GitHub CLI (gh) was not found. Set a custom path under Settings | Tools | GH Stack."
             lower.contains("unknown command") && lower.contains("stack") ->
                 "The gh stack extension is not installed. Run: gh extension install github/gh-stack"
             else -> text
