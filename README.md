@@ -20,6 +20,10 @@ IntelliJ allows extra tabs on the Git / Version Control tool window, so the stac
 - `gh extension install github/gh-stack`
 - `gh auth login`
 
+If `gh` (or `pkgx`, which the plugin uses as a fallback launcher) is not on the
+IDE's PATH, set the executable explicitly under **Settings → Tools → GH Stack**.
+Leave the field empty to auto-detect.
+
 ## Run from source
 
 Open this repository in IntelliJ (or Cursor) and run:

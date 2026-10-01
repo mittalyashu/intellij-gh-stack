@@ -22,6 +22,12 @@
     <resource-bundle>messages.GhStackBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                id="dev.mittalyashu.ghstack.settings"
+                parentId="tools"
+                displayName="GH Stack"
+                instance="dev.mittalyashu.ghstack.settings.GhStackConfigurable"/>
+
         <changesViewContent
                 tabName="GHStack"
                 className="dev.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"
