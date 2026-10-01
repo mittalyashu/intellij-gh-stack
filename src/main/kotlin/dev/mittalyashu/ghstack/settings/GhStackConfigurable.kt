@@ -4,6 +4,7 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.dsl.builder.bindItem
+import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import dev.mittalyashu.ghstack.GhStackBundle
 
@@ -11,6 +12,16 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
     private val settings = GhStackSettings.getInstance()
 
     override fun createPanel(): DialogPanel = panel {
+        row(GhStackBundle.message("settings.gh.path.label")) {
+            textFieldWithBrowseButton()
+                .bindText(
+                    { settings.ghExecutablePath },
+                    { settings.ghExecutablePath = it.trim() },
+                )
+        }
+        row {
+            comment(GhStackBundle.message("settings.gh.path.comment"))
+        }
         row(GhStackBundle.message("settings.stash.label")) {
             comboBox(
                 StashMode.entries,

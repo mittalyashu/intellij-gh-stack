@@ -13,6 +13,7 @@ enum class StashMode { ASK, ALWAYS, NEVER }
 class GhStackSettings : PersistentStateComponent<GhStackSettings.State> {
     class State {
         var stashMode: StashMode = StashMode.ASK
+        var ghExecutablePath: String = ""
     }
 
     private var state = State()
@@ -21,6 +22,12 @@ class GhStackSettings : PersistentStateComponent<GhStackSettings.State> {
         get() = state.stashMode
         set(value) {
             state.stashMode = value
+        }
+
+    var ghExecutablePath: String
+        get() = state.ghExecutablePath
+        set(value) {
+            state.ghExecutablePath = value
         }
 
     override fun getState(): State = state
