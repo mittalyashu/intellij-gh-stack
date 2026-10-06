@@ -2,6 +2,10 @@
 
 IntelliJ plugin that wraps the GitHub CLI [`gh stack`](https://github.com/github/gh-stack) extension so you can view and navigate stacked PRs without leaving the IDE.
 
+Your support will help me keep this project going. Thank you!
+
+[![Buy me a coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://payments.cashfree.com/forms/intellij-gh-stack)
+
 ## What it does
 
 The plugin talks to `gh` in the project Git root. It does not reimplement stacked PRs.
