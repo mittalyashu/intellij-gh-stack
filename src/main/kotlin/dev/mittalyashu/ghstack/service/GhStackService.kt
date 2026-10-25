@@ -137,11 +137,8 @@ class GhStackService(private val project: Project) {
 
     fun rebaseAbort(): GhResult = requireCli().rebaseAbort()
 
-    fun isRebaseInProgress(): Boolean {
-        val gitDir = gitRoot()?.resolve(".git") ?: return false
-        return Files.isDirectory(gitDir.resolve("rebase-merge")) ||
-            Files.isDirectory(gitDir.resolve("rebase-apply"))
-    }
+    /** True while a rebase (interactive, merge or apply) is paused in the primary repository, including in linked worktrees. */
+    fun isRebaseInProgress(): Boolean = primaryRepository()?.isRebaseInProgress == true
 
     fun refreshGit() {
         val repo = primaryRepository() ?: return
