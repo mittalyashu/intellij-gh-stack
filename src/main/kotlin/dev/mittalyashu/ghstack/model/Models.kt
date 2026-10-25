@@ -37,10 +37,11 @@ data class TrackedStack(
 ) {
     val bottom: String? get() = branches.firstOrNull()
     val top: String? get() = branches.lastOrNull()
+    val isLocal: Boolean get() = (number ?: 0) <= 0
 
     fun displayLabel(): String {
         val chain = branches.joinToString(" → ").ifEmpty { "(empty)" }
-        val prefix = if (number != null && number > 0) "Stack #$number" else "Local stack"
+        val prefix = if (isLocal) "Local stack" else "Stack #$number"
         return "$prefix  ($trunk)  $chain"
     }
 
