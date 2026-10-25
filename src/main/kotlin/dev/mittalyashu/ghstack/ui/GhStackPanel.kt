@@ -3,6 +3,7 @@ package dev.mittalyashu.ghstack.ui
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
@@ -64,13 +65,14 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
     private val refreshAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
     private var loading = false
+    private lateinit var actionToolbar: ActionToolbar
 
     init {
-        val toolbar = ActionManager.getInstance()
+        actionToolbar = ActionManager.getInstance()
             .createActionToolbar(ActionPlaces.TOOLBAR, createActions(), true)
-        toolbar.targetComponent = this
+        actionToolbar.targetComponent = this
 
-        add(toolbar.component, BorderLayout.NORTH)
+        add(actionToolbar.component, BorderLayout.NORTH)
         add(JBScrollPane(list), BorderLayout.CENTER)
         add(status, BorderLayout.SOUTH)
 
@@ -137,6 +139,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 list.emptyText.text = result.message
             }
         }
+        actionToolbar.updateActionsAsync()
     }
 
     private fun stackSummary(view: StackView): String {
@@ -190,7 +193,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = rebaseContinue()
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
             override fun update(e: AnActionEvent) {
-                e.presentation.isEnabled = service.isRebaseInProgress()
+                e.presentation.isVisible = service.isRebaseInProgress()
             }
         })
         group.add(object : DumbAwareAction(
@@ -201,7 +204,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = rebaseAbort()
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
             override fun update(e: AnActionEvent) {
-                e.presentation.isEnabled = service.isRebaseInProgress()
+                e.presentation.isVisible = service.isRebaseInProgress()
             }
         })
         return group
