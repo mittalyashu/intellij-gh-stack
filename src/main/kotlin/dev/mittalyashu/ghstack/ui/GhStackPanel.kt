@@ -78,10 +78,6 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         add(status, BorderLayout.SOUTH)
 
         list.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
-                if (e.clickCount == 2) checkoutSelected()
-            }
-
             override fun mousePressed(e: MouseEvent) = selectRowUnderPopupTrigger(e)
 
             override fun mouseReleased(e: MouseEvent) = selectRowUnderPopupTrigger(e)
