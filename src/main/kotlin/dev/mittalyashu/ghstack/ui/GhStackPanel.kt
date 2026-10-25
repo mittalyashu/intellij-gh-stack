@@ -14,6 +14,8 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.DoNotAskOption
+import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.ColoredListCellRenderer
@@ -26,10 +28,15 @@ import com.intellij.util.Alarm
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import dev.mittalyashu.ghstack.GhStackBundle
+import dev.mittalyashu.ghstack.cli.GhResult
 import dev.mittalyashu.ghstack.model.StackLayer
 import dev.mittalyashu.ghstack.model.StackLoadResult
 import dev.mittalyashu.ghstack.model.StackView
 import dev.mittalyashu.ghstack.service.GhStackService
+import dev.mittalyashu.ghstack.service.RebaseAction
+import dev.mittalyashu.ghstack.service.decideRebaseAction
+import dev.mittalyashu.ghstack.settings.GhStackSettings
+import dev.mittalyashu.ghstack.settings.ShelveMode
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import java.awt.BorderLayout
@@ -271,9 +278,42 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     private fun rebase(vararg flags: String) {
-        runGh(GhStackBundle.message("progress.rebase")) {
-            service.rebase(*flags)
+        val settings = GhStackSettings.getInstance()
+        val shelve = when (decideRebaseAction(settings.shelveMode, service.hasLocalChanges())) {
+            RebaseAction.RUN -> false
+            RebaseAction.SHELVE -> true
+            RebaseAction.PROMPT -> askToShelve(settings)
         }
+        val title = GhStackBundle.message("progress.rebase")
+        if (shelve) {
+            runGhWithProgress(title) { indicator -> service.rebaseWithShelve(indicator, *flags) }
+        } else {
+            runGh(title) { service.rebase(*flags) }
+        }
+    }
+
+    /** Returns whether to shelve. Persists the choice when "remember" is ticked. */
+    private fun askToShelve(settings: GhStackSettings): Boolean {
+        var remember = false
+        val shelve = MessageDialogBuilder
+            .yesNo(
+                GhStackBundle.message("dialog.shelve.title"),
+                GhStackBundle.message("dialog.shelve.message"),
+            )
+            .yesText(GhStackBundle.message("dialog.shelve.yes"))
+            .noText(GhStackBundle.message("dialog.shelve.no"))
+            .doNotAsk(object : DoNotAskOption.Adapter() {
+                override fun rememberChoice(isSelected: Boolean, exitCode: Int) {
+                    remember = isSelected
+                }
+
+                override fun getDoNotShowMessage() = GhStackBundle.message("dialog.shelve.remember")
+            })
+            .ask(project)
+        if (remember) {
+            settings.shelveMode = if (shelve) ShelveMode.ALWAYS else ShelveMode.NEVER
+        }
+        return shelve
     }
 
     private fun rebaseContinue() {
@@ -301,10 +341,12 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         }
     }
 
-    private fun runGh(title: String, command: () -> dev.mittalyashu.ghstack.cli.GhResult) {
+    private fun runGh(title: String, command: () -> GhResult) = runGhWithProgress(title) { _ -> command() }
+
+    private fun runGhWithProgress(title: String, command: (ProgressIndicator) -> GhResult) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
             override fun run(indicator: ProgressIndicator) {
-                val result = command()
+                val result = command(indicator)
                 ApplicationManager.getApplication().invokeLater({
                     if (!result.succeeded) {
                         Messages.showErrorDialog(

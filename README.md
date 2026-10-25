@@ -14,6 +14,7 @@ The plugin talks to `gh` in the project Git root. It does not reimplement stacke
 - Add a branch on top of the stack (`gh stack add`)
 - Check out a layer (`gh stack checkout <branch>`)
 - Rebase the stack (`gh stack rebase`, with `--upstack`, `--downstack`, `--no-trunk`), plus continue / abort
+- Optionally shelve uncommitted changes around a rebase and restore them on success (Settings | Tools | GH Stack: ask / always / never)
 - Switch among locally tracked stacks (reads `.git/gh-stack`, then `gh stack checkout`)
 
 IntelliJ allows extra tabs on the Git / Version Control tool window, so the stack UI appears there as **Stack**. The same panel is also available as a dedicated **GH Stack** tool window (bottom stripe).

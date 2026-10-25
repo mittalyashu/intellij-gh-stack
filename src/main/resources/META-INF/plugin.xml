@@ -10,6 +10,7 @@
             <li>Check out a specific layer</li>
             <li>Add a branch on top of the stack</li>
             <li>Rebase the stack (whole, upstack, downstack), then continue or abort</li>
+            <li>Optionally shelve uncommitted changes around a rebase (configurable)</li>
             <li>Switch between locally tracked stacks</li>
         </ul>
         <p>Requires <a href="https://cli.github.com/">GitHub CLI</a> and
@@ -23,6 +24,12 @@
     <resource-bundle>messages.GhStackBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                parentId="tools"
+                id="dev.mittalyashu.ghstack.settings"
+                instance="dev.mittalyashu.ghstack.settings.GhStackConfigurable"
+                displayName="GH Stack"/>
+
         <changesViewContent
                 tabName="GHStack"
                 className="dev.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"

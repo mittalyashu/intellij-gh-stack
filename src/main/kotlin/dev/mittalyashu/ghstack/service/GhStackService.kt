@@ -1,18 +1,24 @@
 package dev.mittalyashu.ghstack.service
 
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
+import dev.mittalyashu.ghstack.GhStackBundle
 import dev.mittalyashu.ghstack.cli.GhCli
 import dev.mittalyashu.ghstack.cli.GhExitCodes
 import dev.mittalyashu.ghstack.cli.GhResult
 import dev.mittalyashu.ghstack.cli.StackJson
 import dev.mittalyashu.ghstack.model.StackLoadResult
 import dev.mittalyashu.ghstack.model.TrackedStacks
+import git4idea.commands.Git
+import git4idea.config.GitSaveChangesPolicy
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryManager
+import git4idea.stash.GitChangesSaver
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -53,6 +59,37 @@ class GhStackService(private val project: Project) {
     fun initStack(branchName: String): GhResult = requireCli().init(branchName)
 
     fun rebase(vararg flags: String): GhResult = requireCli().rebase(*flags)
+
+    /** True when tracked files in the primary repository have uncommitted changes. */
+    fun hasLocalChanges(): Boolean {
+        val repo = primaryRepository() ?: return false
+        val repositoryManager = GitRepositoryManager.getInstance(project)
+        return ChangeListManager.getInstance(project).allChanges.any { change ->
+            val path = (change.afterRevision ?: change.beforeRevision)?.file ?: return@any false
+            repositoryManager.getRepositoryForFileQuick(path) == repo
+        }
+    }
+
+    /**
+     * Shelves local changes, runs the rebase, and restores the shelf only if the rebase succeeded.
+     * After a failed rebase (e.g. a conflict) the shelf is kept and the error mentions it.
+     */
+    fun rebaseWithShelve(indicator: ProgressIndicator, vararg flags: String): GhResult {
+        val repo = primaryRepository() ?: error("This project is not under Git.")
+        val shelfName = GhStackBundle.message("shelve.name")
+        val saver = GitChangesSaver.getSaver(project, Git.getInstance(), indicator, shelfName, GitSaveChangesPolicy.SHELVE)
+        saver.saveLocalChangesOrError(listOf(repo.root))?.let { saveError ->
+            return GhResult(1, "", saveError)
+        }
+
+        val result = rebase(*flags)
+        if (!saver.wereChangesSaved()) return result
+        if (result.succeeded) {
+            saver.load()
+            return result
+        }
+        return result.copy(stderr = "${result.errorText()}\n\n${GhStackBundle.message("shelve.kept.hint", shelfName)}")
+    }
 
     fun rebaseContinue(): GhResult = requireCli().rebaseContinue()
 
