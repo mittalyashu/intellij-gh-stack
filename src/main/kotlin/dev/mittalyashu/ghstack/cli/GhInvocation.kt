@@ -1,5 +1,7 @@
 package dev.mittalyashu.ghstack.cli
 
+import dev.mittalyashu.ghstack.GhStackBundle
+
 sealed interface GhInvocation {
     data class Ready(val command: List<String>) : GhInvocation
 
@@ -17,10 +19,7 @@ sealed interface GhInvocation {
 
             findOnPath("gh")?.let { gh -> return Ready(listOf(gh)) }
 
-            return Missing(
-                "GitHub CLI (gh) was not found. Configure a custom path under " +
-                    "Settings | Tools | GH Stack."
-            )
+            return Missing(GhStackBundle.message("status.gh.missing"))
         }
     }
 }
