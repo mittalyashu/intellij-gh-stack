@@ -11,23 +11,23 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
     private val settings = GhStackSettings.getInstance()
 
     override fun createPanel(): DialogPanel = panel {
-        row(GhStackBundle.message("settings.shelve.label")) {
+        row(GhStackBundle.message("settings.stash.label")) {
             comboBox(
-                ShelveMode.entries,
+                StashMode.entries,
                 SimpleListCellRenderer.create("") { GhStackBundle.message(it.messageKey()) },
             ).bindItem(
-                { settings.shelveMode },
-                { settings.shelveMode = it ?: ShelveMode.ASK },
+                { settings.stashMode },
+                { settings.stashMode = it ?: StashMode.ASK },
             )
         }
         row {
-            comment(GhStackBundle.message("settings.shelve.comment"))
+            comment(GhStackBundle.message("settings.stash.comment"))
         }
     }
 }
 
-private fun ShelveMode.messageKey(): String = when (this) {
-    ShelveMode.ASK -> "settings.shelve.ask"
-    ShelveMode.ALWAYS -> "settings.shelve.always"
-    ShelveMode.NEVER -> "settings.shelve.never"
+private fun StashMode.messageKey(): String = when (this) {
+    StashMode.ASK -> "settings.stash.ask"
+    StashMode.ALWAYS -> "settings.stash.always"
+    StashMode.NEVER -> "settings.stash.never"
 }

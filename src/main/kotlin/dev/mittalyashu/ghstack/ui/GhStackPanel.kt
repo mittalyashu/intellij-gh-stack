@@ -33,10 +33,11 @@ import dev.mittalyashu.ghstack.model.StackLayer
 import dev.mittalyashu.ghstack.model.StackLoadResult
 import dev.mittalyashu.ghstack.model.StackView
 import dev.mittalyashu.ghstack.service.GhStackService
+import dev.mittalyashu.ghstack.service.RebaseOutcome
 import dev.mittalyashu.ghstack.service.RebaseAction
 import dev.mittalyashu.ghstack.service.decideRebaseAction
 import dev.mittalyashu.ghstack.settings.GhStackSettings
-import dev.mittalyashu.ghstack.settings.ShelveMode
+import dev.mittalyashu.ghstack.settings.StashMode
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import java.awt.BorderLayout
@@ -278,42 +279,42 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     private fun rebase(vararg flags: String) {
-        val settings = GhStackSettings.getInstance()
-        val shelve = when (decideRebaseAction(settings.shelveMode, service.hasLocalChanges())) {
-            RebaseAction.RUN -> false
-            RebaseAction.SHELVE -> true
-            RebaseAction.PROMPT -> askToShelve(settings)
-        }
-        val title = GhStackBundle.message("progress.rebase")
-        if (shelve) {
-            runGhWithProgress(title) { indicator -> service.rebaseWithShelve(indicator, *flags) }
-        } else {
-            runGh(title) { service.rebase(*flags) }
+        runTask(GhStackBundle.message("progress.rebase")) {
+            val settings = GhStackSettings.getInstance()
+            val stash = when (decideRebaseAction(settings.stashMode, service.isDirty())) {
+                RebaseAction.RUN -> false
+                RebaseAction.STASH -> true
+                RebaseAction.PROMPT -> askToStash(settings)
+            }
+            if (stash) service.rebaseWithStash(*flags) else RebaseOutcome(service.rebase(*flags))
         }
     }
 
-    /** Returns whether to shelve. Persists the choice when "remember" is ticked. */
-    private fun askToShelve(settings: GhStackSettings): Boolean {
-        var remember = false
-        val shelve = MessageDialogBuilder
-            .yesNo(
-                GhStackBundle.message("dialog.shelve.title"),
-                GhStackBundle.message("dialog.shelve.message"),
-            )
-            .yesText(GhStackBundle.message("dialog.shelve.yes"))
-            .noText(GhStackBundle.message("dialog.shelve.no"))
-            .doNotAsk(object : DoNotAskOption.Adapter() {
-                override fun rememberChoice(isSelected: Boolean, exitCode: Int) {
-                    remember = isSelected
-                }
+    /** Returns whether to stash. Persists the choice when "remember" is ticked. Call from a background thread. */
+    private fun askToStash(settings: GhStackSettings): Boolean {
+        var stash = false
+        ApplicationManager.getApplication().invokeAndWait({
+            var remember = false
+            stash = MessageDialogBuilder
+                .yesNo(
+                    GhStackBundle.message("dialog.stash.title"),
+                    GhStackBundle.message("dialog.stash.message"),
+                )
+                .yesText(GhStackBundle.message("dialog.stash.yes"))
+                .noText(GhStackBundle.message("dialog.stash.no"))
+                .doNotAsk(object : DoNotAskOption.Adapter() {
+                    override fun rememberChoice(isSelected: Boolean, exitCode: Int) {
+                        remember = isSelected
+                    }
 
-                override fun getDoNotShowMessage() = GhStackBundle.message("dialog.shelve.remember")
-            })
-            .ask(project)
-        if (remember) {
-            settings.shelveMode = if (shelve) ShelveMode.ALWAYS else ShelveMode.NEVER
-        }
-        return shelve
+                    override fun getDoNotShowMessage() = GhStackBundle.message("dialog.stash.remember")
+                })
+                .ask(project)
+            if (remember) {
+                settings.stashMode = if (stash) StashMode.ALWAYS else StashMode.NEVER
+            }
+        }, ModalityState.defaultModalityState())
+        return stash
     }
 
     private fun rebaseContinue() {
@@ -341,22 +342,34 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         }
     }
 
-    private fun runGh(title: String, command: () -> GhResult) = runGhWithProgress(title) { _ -> command() }
+    private fun runGh(title: String, command: () -> GhResult) = runTask(title) { RebaseOutcome(command()) }
 
-    private fun runGhWithProgress(title: String, command: (ProgressIndicator) -> GhResult) {
+    private fun runTask(title: String, command: () -> RebaseOutcome) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
             override fun run(indicator: ProgressIndicator) {
-                val result = command(indicator)
+                val outcome = command()
                 ApplicationManager.getApplication().invokeLater({
-                    if (!result.succeeded) {
+                    if (!outcome.result.succeeded) {
                         Messages.showErrorDialog(
                             project,
-                            result.errorText(),
+                            outcome.result.errorText(),
                             GhStackBundle.message("notification.error")
                         )
                     }
-                    service.refreshGit()
-                    refresh()
+                    outcome.stashToRestore?.let { stash ->
+                        if (!service.restoreStash(stash)) {
+                            Messages.showErrorDialog(
+                                project,
+                                GhStackBundle.message("stash.restore.missing", stash.message),
+                                GhStackBundle.message("notification.error"),
+                            )
+                        }
+                    }
+                    // Repository.update() must not run on the EDT.
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        service.refreshGit()
+                        ApplicationManager.getApplication().invokeLater({ refresh() }, ModalityState.any())
+                    }
                 }, ModalityState.any())
             }
         })

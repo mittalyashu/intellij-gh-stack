@@ -6,21 +6,21 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 
-enum class ShelveMode { ASK, ALWAYS, NEVER }
+enum class StashMode { ASK, ALWAYS, NEVER }
 
 @Service(Service.Level.APP)
 @State(name = "GhStackSettings", storages = [Storage("ghstack.xml")])
 class GhStackSettings : PersistentStateComponent<GhStackSettings.State> {
     class State {
-        var shelveMode: ShelveMode = ShelveMode.ASK
+        var stashMode: StashMode = StashMode.ASK
     }
 
     private var state = State()
 
-    var shelveMode: ShelveMode
-        get() = state.shelveMode
+    var stashMode: StashMode
+        get() = state.stashMode
         set(value) {
-            state.shelveMode = value
+            state.stashMode = value
         }
 
     override fun getState(): State = state

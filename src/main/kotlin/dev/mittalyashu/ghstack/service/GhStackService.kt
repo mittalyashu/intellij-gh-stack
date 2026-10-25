@@ -1,9 +1,7 @@
 package dev.mittalyashu.ghstack.service
 
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
@@ -15,12 +13,20 @@ import dev.mittalyashu.ghstack.cli.StackJson
 import dev.mittalyashu.ghstack.model.StackLoadResult
 import dev.mittalyashu.ghstack.model.TrackedStacks
 import git4idea.commands.Git
-import git4idea.config.GitSaveChangesPolicy
+import git4idea.commands.GitCommand
+import git4idea.commands.GitLineHandler
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryManager
-import git4idea.stash.GitChangesSaver
+import git4idea.stash.GitStashOperations
+import git4idea.stash.loadStashStack
 import java.nio.file.Files
 import java.nio.file.Path
+
+/** A stash created around a rebase, identified by commit hash rather than by its (shifting) `stash@{n}` index. */
+data class StashRef(val hash: String, val message: String)
+
+/** The rebase result, plus the stash to restore when the rebase succeeded with changes stashed. */
+data class RebaseOutcome(val result: GhResult, val stashToRestore: StashRef? = null)
 
 @Service(Service.Level.PROJECT)
 class GhStackService(private val project: Project) {
@@ -60,35 +66,71 @@ class GhStackService(private val project: Project) {
 
     fun rebase(vararg flags: String): GhResult = requireCli().rebase(*flags)
 
-    /** True when tracked files in the primary repository have uncommitted changes. */
-    fun hasLocalChanges(): Boolean {
+    /**
+     * True when `gh stack rebase` would refuse to run. Mirrors gh-stack's own check
+     * (`git status --porcelain --untracked-files=all`), so untracked files count. Must not run on the EDT.
+     */
+    fun isDirty(): Boolean {
         val repo = primaryRepository() ?: return false
-        val repositoryManager = GitRepositoryManager.getInstance(project)
-        return ChangeListManager.getInstance(project).allChanges.any { change ->
-            val path = (change.afterRevision ?: change.beforeRevision)?.file ?: return@any false
-            repositoryManager.getRepositoryForFileQuick(path) == repo
+        val handler = GitLineHandler(project, repo.root, GitCommand.STATUS)
+        handler.addParameters("--porcelain", "--untracked-files=all")
+        handler.setSilent(true)
+        val result = Git.getInstance().runCommand(handler)
+        return result.success() && result.output.any { it.isNotBlank() }
+    }
+
+    /**
+     * Stashes local changes (including untracked files), runs the rebase, and reports the stash to restore
+     * only if the rebase succeeded. After a failed rebase (e.g. a conflict) the stash is kept and the error mentions it.
+     */
+    fun rebaseWithStash(vararg flags: String): RebaseOutcome {
+        val repo = primaryRepository() ?: error("This project is not under Git.")
+        val message = GhStackBundle.message("stash.name")
+        val headBefore = stashHead(repo.root)
+        stashLocalChanges(repo.root, message)?.let { stashError ->
+            return RebaseOutcome(GhResult(1, "", stashError))
+        }
+        val stash = stashHead(repo.root)?.takeIf { it != headBefore }
+
+        val result = rebase(*flags)
+        return when {
+            stash == null -> RebaseOutcome(result)
+            result.succeeded -> RebaseOutcome(result, StashRef(stash, message))
+            else -> RebaseOutcome(
+                result.copy(stderr = "${result.errorText()}\n\n${GhStackBundle.message("stash.kept.hint", message)}"),
+            )
         }
     }
 
     /**
-     * Shelves local changes, runs the rebase, and restores the shelf only if the rebase succeeded.
-     * After a failed rebase (e.g. a conflict) the shelf is kept and the error mentions it.
+     * Applies and drops [stash] through Git4Idea's unstash, which shows its own conflict resolver and keeps the stash
+     * on conflict. Runs a modal progress, so call it from the EDT. Returns false when the stash can't be found.
      */
-    fun rebaseWithShelve(indicator: ProgressIndicator, vararg flags: String): GhResult {
-        val repo = primaryRepository() ?: error("This project is not under Git.")
-        val shelfName = GhStackBundle.message("shelve.name")
-        val saver = GitChangesSaver.getSaver(project, Git.getInstance(), indicator, shelfName, GitSaveChangesPolicy.SHELVE)
-        saver.saveLocalChangesOrError(listOf(repo.root))?.let { saveError ->
-            return GhResult(1, "", saveError)
-        }
+    fun restoreStash(stash: StashRef): Boolean {
+        val repo = primaryRepository() ?: return false
+        val info = runCatching { loadStashStack(project, repo.root) }
+            .getOrNull()
+            ?.firstOrNull { it.hash.asString() == stash.hash }
+            ?: return false
+        GitStashOperations.unstash(project, info, null, true, true)
+        return true
+    }
 
-        val result = rebase(*flags)
-        if (!saver.wereChangesSaved()) return result
-        if (result.succeeded) {
-            saver.load()
-            return result
-        }
-        return result.copy(stderr = "${result.errorText()}\n\n${GhStackBundle.message("shelve.kept.hint", shelfName)}")
+    /** Returns a git error message, or null when the push succeeded (or there was nothing to stash). */
+    private fun stashLocalChanges(root: VirtualFile, message: String): String? {
+        val handler = GitLineHandler(project, root, GitCommand.STASH)
+        handler.addParameters("push", "--include-untracked", "-m", message)
+        val result = Git.getInstance().runCommand(handler)
+        if (result.success()) return null
+        return result.errorOutputAsJoinedString.ifBlank { "git stash failed" }
+    }
+
+    private fun stashHead(root: VirtualFile): String? {
+        val handler = GitLineHandler(project, root, GitCommand.REV_PARSE)
+        handler.addParameters("--verify", "--quiet", "refs/stash")
+        handler.setSilent(true)
+        val result = Git.getInstance().runCommand(handler)
+        return if (result.success()) result.output.firstOrNull()?.trim()?.ifEmpty { null } else null
     }
 
     fun rebaseContinue(): GhResult = requireCli().rebaseContinue()
