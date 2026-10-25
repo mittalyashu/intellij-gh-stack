@@ -20,6 +20,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.JBColor
+import com.intellij.ui.PopupHandler
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
@@ -78,7 +79,12 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun mouseClicked(e: MouseEvent) {
                 if (e.clickCount == 2) checkoutSelected()
             }
+
+            override fun mousePressed(e: MouseEvent) = selectRowUnderPopupTrigger(e)
+
+            override fun mouseReleased(e: MouseEvent) = selectRowUnderPopupTrigger(e)
         })
+        PopupHandler.installSelectionListPopup(list, createPopupGroup(), ActionPlaces.POPUP)
 
         project.messageBus.connect(this).subscribe(
             GitRepository.GIT_REPO_CHANGE,
@@ -145,6 +151,22 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             addAll(view.branches.map { it.name })
         }
         return names.joinToString("  →  ")
+    }
+
+    private fun createPopupGroup(): DefaultActionGroup {
+        return DefaultActionGroup(
+            object : DumbAwareAction(
+                GhStackBundle.message("panel.checkout"),
+                null,
+                AllIcons.Actions.CheckOut,
+            ) {
+                override fun actionPerformed(e: AnActionEvent) = checkoutSelected()
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = checkoutTargetFor(selectedLayer()) != null
+                }
+            },
+        )
     }
 
     private fun createActions(): DefaultActionGroup {
@@ -234,6 +256,15 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         return (list.selectedValue as? StackRow.Layer)?.layer
     }
 
+    /** Right-clicking a row selects it first (like the native Git panel) so the popup acts on that row. */
+    private fun selectRowUnderPopupTrigger(e: MouseEvent) {
+        if (!e.isPopupTrigger) return
+        val index = list.locationToIndex(e.point)
+        if (index >= 0 && list.getCellBounds(index, index)?.contains(e.point) == true) {
+            list.selectedIndex = index
+        }
+    }
+
     private fun addBranch() {
         val name = Messages.showInputDialog(
             project,
@@ -248,9 +279,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     private fun checkoutSelected() {
-        val layer = selectedLayer() ?: return
+        val target = checkoutTargetFor(selectedLayer()) ?: return
         runGh(GhStackBundle.message("progress.checkout")) {
-            service.checkout(layer.name)
+            service.checkout(target)
         }
     }
 
