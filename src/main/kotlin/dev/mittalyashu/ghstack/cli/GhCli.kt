@@ -19,7 +19,10 @@ class GhCli(private val workingDirectory: Path) {
 
     fun init(branchName: String): GhResult = run("stack", "init", branchName)
 
-    fun rebase(vararg flags: String): GhResult = run("stack", "rebase", *flags)
+    fun rebase(vararg flags: String): GhResult {
+        val timeoutMs = if (flags.contains("--abort")) DEFAULT_TIMEOUT_MS else REBASE_TIMEOUT_MS
+        return run(timeoutMs, "stack", "rebase", *flags)
+    }
 
     fun rebaseContinue(): GhResult = rebase("--continue")
 
@@ -27,7 +30,9 @@ class GhCli(private val workingDirectory: Path) {
 
     fun version(): GhResult = run("--version")
 
-    private fun run(vararg args: String): GhResult {
+    private fun run(vararg args: String): GhResult = run(DEFAULT_TIMEOUT_MS, *args)
+
+    private fun run(timeoutMs: Int, vararg args: String): GhResult {
         val pkgx = PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS("pkgx")
             ?: return GhResult(
                 exitCode = 127,
@@ -50,11 +55,16 @@ class GhCli(private val workingDirectory: Path) {
             )
 
         log.debug("Running: ${commandLine.commandLineString} in $workingDirectory")
-        val output: ProcessOutput = CapturingProcessHandler(commandLine).runProcess(60_000)
+        val output: ProcessOutput = CapturingProcessHandler(commandLine).runProcess(timeoutMs)
         return GhResult(
             exitCode = output.exitCode,
             stdout = output.stdout,
             stderr = output.stderr,
         )
+    }
+
+    private companion object {
+        private const val DEFAULT_TIMEOUT_MS = 60_000
+        private const val REBASE_TIMEOUT_MS = 10 * 60_000
     }
 }
