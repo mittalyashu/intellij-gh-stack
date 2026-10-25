@@ -294,6 +294,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             GhStackBundle.message("dialog.init.prompt"),
             GhStackBundle.message("dialog.init.title"),
             Messages.getQuestionIcon(),
+            null,
+            null,
+            null,
+            GhStackBundle.message("dialog.init.description"),
         )?.trim().orEmpty()
         if (name.isEmpty()) return
         runGh(GhStackBundle.message("progress.init")) {
