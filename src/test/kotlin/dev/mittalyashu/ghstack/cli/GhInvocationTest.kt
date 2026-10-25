@@ -20,19 +20,19 @@ class GhInvocationTest {
     }
 
     @Test
-    fun fallsBackToPkgx() {
-        val invocation = GhInvocation.resolve("") { name ->
-            if (name == "pkgx") "/usr/local/bin/pkgx" else null
-        }
-        assertEquals(GhInvocation.Ready(listOf("/usr/local/bin/pkgx", "gh")), invocation)
-    }
-
-    @Test
-    fun fallsBackToGhOnPath() {
+    fun autoDetectsGhOnPathWhenEmpty() {
         val invocation = GhInvocation.resolve("") { name ->
             if (name == "gh") "/usr/bin/gh" else null
         }
         assertEquals(GhInvocation.Ready(listOf("/usr/bin/gh")), invocation)
+    }
+
+    @Test
+    fun doesNotUsePkgxWhenEmpty() {
+        val invocation = GhInvocation.resolve("") { name ->
+            if (name == "pkgx") "/usr/local/bin/pkgx" else null
+        }
+        assertTrue(invocation is GhInvocation.Missing)
     }
 
     @Test

@@ -15,7 +15,6 @@ sealed interface GhInvocation {
                 return Ready(listOf(custom))
             }
 
-            findOnPath("pkgx")?.let { pkgx -> return Ready(listOf(pkgx, "gh")) }
             findOnPath("gh")?.let { gh -> return Ready(listOf(gh)) }
 
             return Missing(
