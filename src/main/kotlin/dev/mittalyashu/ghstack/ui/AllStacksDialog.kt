@@ -1,5 +1,6 @@
 package dev.mittalyashu.ghstack.ui
 
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.progress.ProgressIndicator
@@ -26,11 +27,9 @@ class AllStacksDialog(
     private val listModel = DefaultListModel<TrackedStack>()
     private val list = JBList(listModel).apply {
         selectionMode = ListSelectionModel.SINGLE_SELECTION
-        cellRenderer = javax.swing.DefaultListCellRenderer().apply {
-            // labels come from TrackedStack.toString via custom renderer below
-        }
         setCellRenderer { _, value, _, _, _ ->
             javax.swing.JLabel(value?.displayLabel().orEmpty()).apply {
+                icon = if (value?.isLocal == true) AllIcons.Nodes.Desktop else null
                 border = JBUI.Borders.empty(4, 8)
             }
         }
