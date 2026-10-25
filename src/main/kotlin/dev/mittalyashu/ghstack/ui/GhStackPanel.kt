@@ -166,17 +166,6 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
         group.add(object : DumbAwareAction(
-            GhStackBundle.message("panel.checkout"),
-            null,
-            AllIcons.Actions.Execute,
-        ) {
-            override fun actionPerformed(e: AnActionEvent) = checkoutSelected()
-            override fun getActionUpdateThread() = ActionUpdateThread.EDT
-            override fun update(e: AnActionEvent) {
-                e.presentation.isEnabled = selectedLayer() != null
-            }
-        })
-        group.add(object : DumbAwareAction(
             GhStackBundle.message("panel.all.stacks"),
             null,
             AllIcons.Vcs.Branch,
