@@ -9,6 +9,7 @@
             <li>View the current stacked PR chain in the Git tool window</li>
             <li>Check out a specific layer</li>
             <li>Add a branch on top of the stack</li>
+            <li>Rebase the stack (whole, upstack, downstack), then continue or abort</li>
             <li>Switch between locally tracked stacks</li>
         </ul>
         <p>Requires <a href="https://cli.github.com/">GitHub CLI</a> and

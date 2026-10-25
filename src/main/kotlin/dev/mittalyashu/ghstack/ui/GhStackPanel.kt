@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.progress.ProgressIndicator
@@ -183,7 +184,53 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = initStack()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
+        group.add(createRebaseGroup())
+        group.add(object : DumbAwareAction(
+            GhStackBundle.message("panel.rebase.continue"),
+            null,
+            AllIcons.Actions.Resume,
+        ) {
+            override fun actionPerformed(e: AnActionEvent) = rebaseContinue()
+            override fun getActionUpdateThread() = ActionUpdateThread.BGT
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = service.isRebaseInProgress()
+            }
+        })
+        group.add(object : DumbAwareAction(
+            GhStackBundle.message("panel.rebase.abort"),
+            null,
+            AllIcons.Actions.Cancel,
+        ) {
+            override fun actionPerformed(e: AnActionEvent) = rebaseAbort()
+            override fun getActionUpdateThread() = ActionUpdateThread.BGT
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = service.isRebaseInProgress()
+            }
+        })
         return group
+    }
+
+    private fun createRebaseGroup(): DefaultActionGroup {
+        fun variant(messageKey: String, vararg flags: String) = object : DumbAwareAction(
+            GhStackBundle.message(messageKey),
+        ) {
+            override fun actionPerformed(e: AnActionEvent) = rebase(*flags)
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        }
+
+        return DefaultActionGroup(
+            GhStackBundle.message("panel.rebase"),
+            listOf(
+                variant("panel.rebase.stack"),
+                variant("panel.rebase.upstack", "--upstack"),
+                variant("panel.rebase.downstack", "--downstack"),
+                variant("panel.rebase.no.trunk", "--no-trunk"),
+            ),
+        ).apply {
+            isPopup = true
+            templatePresentation.icon = AllIcons.Vcs.Merge
+            templatePresentation.putClientProperty(ActionUtil.SHOW_TEXT_IN_TOOLBAR, false)
+        }
     }
 
     private fun selectedLayer(): StackLayer? {
@@ -220,6 +267,31 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         if (name.isEmpty()) return
         runGh(GhStackBundle.message("progress.init")) {
             service.initStack(name)
+        }
+    }
+
+    private fun rebase(vararg flags: String) {
+        runGh(GhStackBundle.message("progress.rebase")) {
+            service.rebase(*flags)
+        }
+    }
+
+    private fun rebaseContinue() {
+        runGh(GhStackBundle.message("progress.rebase.continue")) {
+            service.rebaseContinue()
+        }
+    }
+
+    private fun rebaseAbort() {
+        val confirmed = Messages.showYesNoDialog(
+            project,
+            GhStackBundle.message("dialog.rebase.abort.confirm"),
+            GhStackBundle.message("dialog.rebase.abort.title"),
+            Messages.getWarningIcon(),
+        ) == Messages.YES
+        if (!confirmed) return
+        runGh(GhStackBundle.message("progress.rebase.abort")) {
+            service.rebaseAbort()
         }
     }
 

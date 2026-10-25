@@ -19,6 +19,12 @@ class GhCli(private val workingDirectory: Path) {
 
     fun init(branchName: String): GhResult = run("stack", "init", branchName)
 
+    fun rebase(vararg flags: String): GhResult = run("stack", "rebase", *flags)
+
+    fun rebaseContinue(): GhResult = rebase("--continue")
+
+    fun rebaseAbort(): GhResult = rebase("--abort")
+
     fun version(): GhResult = run("--version")
 
     private fun run(vararg args: String): GhResult {

@@ -52,6 +52,18 @@ class GhStackService(private val project: Project) {
 
     fun initStack(branchName: String): GhResult = requireCli().init(branchName)
 
+    fun rebase(vararg flags: String): GhResult = requireCli().rebase(*flags)
+
+    fun rebaseContinue(): GhResult = requireCli().rebaseContinue()
+
+    fun rebaseAbort(): GhResult = requireCli().rebaseAbort()
+
+    fun isRebaseInProgress(): Boolean {
+        val gitDir = gitRoot()?.resolve(".git") ?: return false
+        return Files.isDirectory(gitDir.resolve("rebase-merge")) ||
+            Files.isDirectory(gitDir.resolve("rebase-apply"))
+    }
+
     fun refreshGit() {
         val repo = primaryRepository() ?: return
         VfsUtil.markDirtyAndRefresh(true, true, true, repo.root)
