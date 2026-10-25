@@ -43,7 +43,7 @@ class GhStackService(private val project: Project) {
             return StackLoadResult.NotInStack
         }
         if (!result.succeeded) {
-            return StackLoadResult.Failed(humanizeFailure(result), result.exitCode)
+            return StackLoadResult.Failed(humanizeGhFailure(result), result.exitCode)
         }
         return runCatching { StackLoadResult.Loaded(StackJson.parseView(result.stdout)) }
             .getOrElse { StackLoadResult.Failed(it.message ?: "Could not parse gh stack view --json") }
@@ -159,17 +159,5 @@ class GhStackService(private val project: Project) {
 
     private fun findGitDir(root: VirtualFile): VirtualFile? {
         return LocalFileSystem.getInstance().refreshAndFindFileByNioFile(root.toNioPath().resolve(".git"))
-    }
-
-    private fun humanizeFailure(result: GhResult): String {
-        val text = result.errorText()
-        val lower = text.lowercase()
-        return when {
-            lower.contains("no such file") || lower.contains("not found") ->
-                "GitHub CLI (gh) was not found. Set a custom path under Settings | Tools | GH Stack."
-            lower.contains("unknown command") && lower.contains("stack") ->
-                "The gh stack extension is not installed. Run: gh extension install github/gh-stack"
-            else -> text
-        }
     }
 }
