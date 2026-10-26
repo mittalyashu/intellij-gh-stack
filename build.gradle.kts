@@ -36,4 +36,11 @@ intellijPlatform {
         }
     }
     instrumentCode = false
+
+    pluginVerification {
+        ides {
+            current()
+            recommended()
+        }
+    }
 }
