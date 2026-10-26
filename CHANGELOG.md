@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Prompt to enable `git rerere` before initializing or rebasing a stack, so repeated conflict resolutions are reused
-
 ## [0.1.0]
 
 Initial release. A thin IntelliJ wrapper around the GitHub CLI
@@ -24,6 +20,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 - Add a branch on top of the stack
 - Initialize a new stack
 - Rebase the stack (whole, upstack, downstack, or without trunk), plus continue and abort
+- Prompt to enable `git rerere` before initializing or rebasing a stack, so repeated conflict resolutions are reused
 - Optional stash of uncommitted changes and untracked files around a rebase (ask / always / never)
 - Switch between locally tracked stacks
 - Settings to configure the `gh` executable path
