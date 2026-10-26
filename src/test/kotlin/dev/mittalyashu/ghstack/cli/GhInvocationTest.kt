@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.cli
+package com.github.mittalyashu.ghstack.cli
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

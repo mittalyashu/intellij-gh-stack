@@ -1,7 +1,7 @@
-package dev.mittalyashu.ghstack.service
+package com.github.mittalyashu.ghstack.service
 
-import dev.mittalyashu.ghstack.GhStackBundle
-import dev.mittalyashu.ghstack.cli.GhResult
+import com.github.mittalyashu.ghstack.GhStackBundle
+import com.github.mittalyashu.ghstack.cli.GhResult
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,6 +1,6 @@
-package dev.mittalyashu.ghstack.cli
+package com.github.mittalyashu.ghstack.cli
 
-import dev.mittalyashu.ghstack.GhStackBundle
+import com.github.mittalyashu.ghstack.GhStackBundle
 
 sealed interface GhInvocation {
     data class Ready(val command: List<String>) : GhInvocation

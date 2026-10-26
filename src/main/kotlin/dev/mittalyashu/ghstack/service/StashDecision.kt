@@ -1,6 +1,6 @@
-package dev.mittalyashu.ghstack.service
+package com.github.mittalyashu.ghstack.service
 
-import dev.mittalyashu.ghstack.settings.StashMode
+import com.github.mittalyashu.ghstack.settings.StashMode
 
 enum class RebaseAction {
     /** Run `gh stack rebase` as-is. */

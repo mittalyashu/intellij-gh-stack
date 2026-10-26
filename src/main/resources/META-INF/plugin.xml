@@ -1,20 +1,25 @@
 <idea-plugin>
-    <id>dev.mittalyashu.ghstack</id>
+    <id>com.github.mittalyashu.ghstack</id>
     <name>GH Stack</name>
     <vendor url="https://github.com/mittalyashu">mittalyashu</vendor>
 
     <description><![CDATA[
-        <p>A thin IntelliJ wrapper around the GitHub CLI <code>gh stack</code> extension.</p>
+        <p>A thin IntelliJ wrapper around the GitHub CLI <code>gh stack</code> extension. View and navigate
+        stacked pull requests without leaving the IDE.</p>
         <ul>
-            <li>View the current stacked PR chain in the Git tool window</li>
+            <li>View the current stacked PR chain in the Git tool window, or in a dedicated <b>GH Stack</b> tool window; the view refreshes automatically as branches and Git state change</li>
+            <li>See each layer's PR number, plus its merged / queued / needs-rebase status and the current branch</li>
             <li>Check out a specific layer</li>
             <li>Add a branch on top of the stack</li>
-            <li>Rebase the stack (whole, upstack, downstack), then continue or abort</li>
-            <li>Optionally stash uncommitted changes and untracked files around a rebase (configurable)</li>
+            <li>Initialize a new stack</li>
+            <li>Rebase the stack (whole, upstack, downstack, or without trunk), then continue or abort</li>
+            <li>Optionally stash uncommitted changes and untracked files around a rebase (ask / always / never)</li>
             <li>Switch between locally tracked stacks</li>
+            <li>Show clear next steps when <code>gh</code> or the gh stack extension is missing, or the current branch is not in a stack</li>
+            <li>Configure the <code>gh</code> executable path in Settings | Tools | GH Stack</li>
         </ul>
-        <p>Requires <a href="https://cli.github.com/">GitHub CLI</a> and
-        <code>gh extension install github/gh-stack</code>.</p>
+        <p>Requires <a href="https://cli.github.com/">GitHub CLI</a>,
+        <code>gh extension install github/gh-stack</code>, and a signed-in account (<code>gh auth login</code>).</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -26,19 +31,19 @@
     <extensions defaultExtensionNs="com.intellij">
         <applicationConfigurable
                 parentId="tools"
-                id="dev.mittalyashu.ghstack.settings"
-                instance="dev.mittalyashu.ghstack.settings.GhStackConfigurable"
+                id="com.github.mittalyashu.ghstack.settings"
+                instance="com.github.mittalyashu.ghstack.settings.GhStackConfigurable"
                 displayName="GH Stack"/>
 
         <changesViewContent
                 tabName="GHStack"
-                className="dev.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"
-                predicateClassName="dev.mittalyashu.ghstack.vcs.GhStackContentPredicate"
-                displayNameSupplierClassName="dev.mittalyashu.ghstack.vcs.GhStackTabNameSupplier"/>
+                className="com.github.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"
+                predicateClassName="com.github.mittalyashu.ghstack.vcs.GhStackContentPredicate"
+                displayNameSupplierClassName="com.github.mittalyashu.ghstack.vcs.GhStackTabNameSupplier"/>
 
         <toolWindow
                 id="GH Stack"
-                factoryClass="dev.mittalyashu.ghstack.ui.GhStackToolWindowFactory"
+                factoryClass="com.github.mittalyashu.ghstack.ui.GhStackToolWindowFactory"
                 anchor="bottom"
                 icon="AllIcons.Vcs.Branch"
                 canCloseContents="false"/>

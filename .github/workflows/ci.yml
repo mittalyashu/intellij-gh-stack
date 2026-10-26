@@ -35,3 +35,22 @@ jobs:
 
       - name: Test
         run: ./gradlew test --console=plain
+
+      - name: Build plugin
+        run: ./gradlew buildPlugin --console=plain
+
+      - name: Verify plugin
+        run: ./gradlew verifyPlugin --console=plain
+
+      - name: Upload plugin distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-distribution
+          path: build/distributions/*.zip
+
+      - name: Upload Plugin Verifier report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pluginVerifier-result
+          path: build/reports/pluginVerifier

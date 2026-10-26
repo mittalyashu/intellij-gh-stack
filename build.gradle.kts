@@ -46,4 +46,11 @@ intellijPlatform {
     publishing {
         token = providers.environmentVariable("JETBRAINS_MKT_PUBLISH_TOKEN")
     }
+
+    pluginVerification {
+        ides {
+            current()
+            recommended()
+        }
+    }
 }

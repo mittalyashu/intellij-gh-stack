@@ -1,6 +1,6 @@
-package dev.mittalyashu.ghstack.service
+package com.github.mittalyashu.ghstack.service
 
-import dev.mittalyashu.ghstack.settings.StashMode
+import com.github.mittalyashu.ghstack.settings.StashMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

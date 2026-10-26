@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.service
+package com.github.mittalyashu.ghstack.service
 
 import java.nio.file.Files
 import java.nio.file.Path

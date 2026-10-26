@@ -1,9 +1,9 @@
-package dev.mittalyashu.ghstack.vcs
+package com.github.mittalyashu.ghstack.vcs
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.changes.ui.ChangesViewContentProvider
 import com.intellij.ui.content.Content
-import dev.mittalyashu.ghstack.ui.GhStackPanel
+import com.github.mittalyashu.ghstack.ui.GhStackPanel
 
 class GhStackChangesViewContentProvider(private val project: Project) : ChangesViewContentProvider {
     private var panel: GhStackPanel? = null

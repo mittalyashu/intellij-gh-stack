@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.settings
+package com.github.mittalyashu.ghstack.settings
 
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.DialogPanel
@@ -6,7 +6,7 @@ import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
-import dev.mittalyashu.ghstack.GhStackBundle
+import com.github.mittalyashu.ghstack.GhStackBundle
 
 class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.title")) {
     private val settings = GhStackSettings.getInstance()

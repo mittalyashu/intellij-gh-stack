@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.ui
+package com.github.mittalyashu.ghstack.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
@@ -29,17 +29,17 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.Alarm
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import dev.mittalyashu.ghstack.GhStackBundle
-import dev.mittalyashu.ghstack.cli.GhResult
-import dev.mittalyashu.ghstack.model.StackLayer
-import dev.mittalyashu.ghstack.model.StackLoadResult
-import dev.mittalyashu.ghstack.model.StackView
-import dev.mittalyashu.ghstack.service.GhStackService
-import dev.mittalyashu.ghstack.service.RebaseOutcome
-import dev.mittalyashu.ghstack.service.RebaseAction
-import dev.mittalyashu.ghstack.service.decideRebaseAction
-import dev.mittalyashu.ghstack.settings.GhStackSettings
-import dev.mittalyashu.ghstack.settings.StashMode
+import com.github.mittalyashu.ghstack.GhStackBundle
+import com.github.mittalyashu.ghstack.cli.GhResult
+import com.github.mittalyashu.ghstack.model.StackLayer
+import com.github.mittalyashu.ghstack.model.StackLoadResult
+import com.github.mittalyashu.ghstack.model.StackView
+import com.github.mittalyashu.ghstack.service.GhStackService
+import com.github.mittalyashu.ghstack.service.RebaseOutcome
+import com.github.mittalyashu.ghstack.service.RebaseAction
+import com.github.mittalyashu.ghstack.service.decideRebaseAction
+import com.github.mittalyashu.ghstack.settings.GhStackSettings
+import com.github.mittalyashu.ghstack.settings.StashMode
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import java.awt.BorderLayout
