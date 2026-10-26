@@ -32,7 +32,7 @@ jobs:
 
       - name: Publish plugin
         env:
-          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          JETBRAINS_MKT_PUBLISH_TOKEN: ${{ secrets.JETBRAINS_MKT_PUBLISH_TOKEN }}
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}

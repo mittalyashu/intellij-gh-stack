@@ -44,6 +44,6 @@ intellijPlatform {
     }
 
     publishing {
-        token = providers.environmentVariable("PUBLISH_TOKEN")
+        token = providers.environmentVariable("JETBRAINS_MKT_PUBLISH_TOKEN")
     }
 }
