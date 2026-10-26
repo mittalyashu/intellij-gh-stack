@@ -14,6 +14,7 @@
             <li>Initialize a new stack</li>
             <li>Rebase the stack (whole, upstack, downstack, or without trunk), then continue or abort</li>
             <li>Optionally stash uncommitted changes and untracked files around a rebase (ask / always / never)</li>
+            <li>Prompt to enable <code>git rerere</code> before initializing or rebasing a stack, so repeated conflict resolutions are reused</li>
             <li>Switch between locally tracked stacks</li>
             <li>Show clear next steps when <code>gh</code> or the gh stack extension is missing, or the current branch is not in a stack</li>
             <li>Configure the <code>gh</code> executable path in Settings | Tools | GH Stack</li>

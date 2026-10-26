@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -37,7 +38,9 @@ import com.github.mittalyashu.ghstack.model.StackView
 import com.github.mittalyashu.ghstack.service.GhStackService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
 import com.github.mittalyashu.ghstack.service.RebaseAction
+import com.github.mittalyashu.ghstack.service.RerereAction
 import com.github.mittalyashu.ghstack.service.decideRebaseAction
+import com.github.mittalyashu.ghstack.service.decideRerereAction
 import com.github.mittalyashu.ghstack.settings.GhStackSettings
 import com.github.mittalyashu.ghstack.settings.StashMode
 import git4idea.repo.GitRepository
@@ -54,6 +57,7 @@ import javax.swing.SwingConstants
 
 class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
     private val service = project.getService(GhStackService::class.java)
+    private val log = Logger.getInstance(GhStackPanel::class.java)
     private val status = JBLabel("", SwingConstants.LEFT).apply {
         border = JBUI.Borders.empty(8, 12)
         foreground = UIUtil.getContextHelpForeground()
@@ -296,8 +300,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             GhStackBundle.message("dialog.init.description"),
         )?.trim().orEmpty()
         if (name.isEmpty()) return
-        runGh(GhStackBundle.message("progress.init")) {
-            service.initStack(name)
+        runTask(GhStackBundle.message("progress.init")) {
+            ensureRerere()
+            RebaseOutcome(service.initStack(name))
         }
     }
 
@@ -309,8 +314,61 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 RebaseAction.STASH -> true
                 RebaseAction.PROMPT -> askToStash(settings)
             }
+            ensureRerere()
             if (stash) service.rebaseWithStash(*flags) else RebaseOutcome(service.rebase(*flags))
         }
+    }
+
+    /**
+     * Ensures git rerere is available before a stack command that can conflict. Idempotent, so it is safe to
+     * call from both [initStack] and [rebase]; it no-ops once rerere is enabled or was declined. Mirrors
+     * `gh stack`'s own `ensureRerere`, which cannot run for plugin-driven commands because the CLI is invoked
+     * non-interactively. Call from a background thread.
+     */
+    private fun ensureRerere() {
+        val action = decideRerereAction(
+            enabled = service.isRerereEnabled(),
+            declined = service.isRerereDeclined(),
+            interactive = !ApplicationManager.getApplication().isHeadlessEnvironment,
+        )
+        if (action == RerereAction.SKIP) return
+        when (askToEnableRerere()) {
+            true -> if (!service.enableRerere()) {
+                log.warn("Could not enable git rerere; continuing without it")
+            }
+
+            false -> if (!service.declineRerere()) {
+                log.warn("Could not record the declined git rerere prompt; it may be asked again")
+            }
+
+            null -> Unit
+        }
+    }
+
+    /**
+     * Returns whether to enable rerere, or null when the prompt was dismissed without an answer. A dismissal
+     * is deliberately not a decline, so an accidental Esc doesn't suppress the prompt forever (matching
+     * `gh stack`, which only persists an explicit "no"). Call from a background thread.
+     */
+    private fun askToEnableRerere(): Boolean? {
+        var answer: Boolean? = null
+        ApplicationManager.getApplication().invokeAndWait({
+            val choice = MessageDialogBuilder
+                .yesNoCancel(
+                    GhStackBundle.message("dialog.rerere.title"),
+                    GhStackBundle.message("dialog.rerere.message"),
+                )
+                .yesText(GhStackBundle.message("dialog.rerere.yes"))
+                .noText(GhStackBundle.message("dialog.rerere.no"))
+                .cancelText(GhStackBundle.message("dialog.rerere.cancel"))
+                .show(project)
+            answer = when (choice) {
+                Messages.YES -> true
+                Messages.NO -> false
+                else -> null
+            }
+        }, ModalityState.defaultModalityState())
+        return answer
     }
 
     /** Returns whether to stash. Persists the choice when "remember" is ticked. Call from a background thread. */
