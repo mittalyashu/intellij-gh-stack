@@ -62,7 +62,38 @@ class GhStackService(private val project: Project) {
 
     fun checkout(target: String): GhResult = requireCli().checkout(target)
 
-    fun initStack(branchName: String): GhResult = requireCli().init(branchName)
+    fun initStack(branchName: String, base: String? = null): GhResult = requireCli().init(branchName, base)
+
+    fun unstackLocal(): GhResult = requireCli().unstackLocal()
+
+    /** Branch list, default trunk and tracked stacks, for the init dialog to prefill and validate against. */
+    fun loadInitStackOptions(): InitStackOptions {
+        val localBranches = localBranchNames()
+        val current = currentBranchName()
+        return InitStackOptions(
+            localBranches = localBranches,
+            currentBranch = current,
+            defaultBase = defaultBaseBranch(localBranches, current, resolveRemoteDefaultBranch()),
+            trackedStacks = loadTrackedStacks().getOrNull()?.stacks.orEmpty(),
+        )
+    }
+
+    private fun localBranchNames(): List<String> =
+        primaryRepository()?.branches?.localBranches?.map { it.name }?.sorted().orEmpty()
+
+    private fun currentBranchName(): String? = primaryRepository()?.currentBranch?.name
+
+    /** The repository's default branch as named by `origin/HEAD`, or null when it is unset. Must not run on the EDT. */
+    private fun resolveRemoteDefaultBranch(): String? {
+        val repo = primaryRepository() ?: return null
+        val handler = GitLineHandler(project, repo.root, GitCommand.REV_PARSE)
+        handler.addParameters("--abbrev-ref", "origin/HEAD")
+        handler.setSilent(true)
+        val result = Git.getInstance().runCommand(handler)
+        if (!result.success()) return null
+        val name = result.output.firstOrNull()?.trim().orEmpty()
+        return name.removePrefix("origin/").takeIf { it.isNotEmpty() && it != "origin/HEAD" }
+    }
 
     fun rebase(vararg flags: String): GhResult = requireCli().rebase(*flags)
 

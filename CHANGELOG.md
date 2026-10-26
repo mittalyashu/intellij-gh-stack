@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Initialize stack now opens a dialog to choose the trunk/base branch, adopt an existing local branch or name a new one, and unstack an existing stack first when the current branch is already part of one
+
 ## [0.1.0]
 
 Initial release. A thin IntelliJ wrapper around the GitHub CLI
