@@ -51,7 +51,7 @@ class GhStackService(private val project: Project) {
 
     fun loadTrackedStacks(): Result<TrackedStacks> {
         val root = gitRoot() ?: return Result.failure(IllegalStateException("This project is not under Git."))
-        val file = root.resolve(".git").resolve("gh-stack")
+        val file = resolveGhStackStateFile(root)
         if (!Files.isRegularFile(file)) {
             return Result.success(TrackedStacks(stacks = emptyList()))
         }
@@ -144,8 +144,8 @@ class GhStackService(private val project: Project) {
         val repo = primaryRepository() ?: return
         VfsUtil.markDirtyAndRefresh(true, true, true, repo.root)
         repo.update()
-        findGitDir(repo.root)?.let { gitDir ->
-            VfsUtil.markDirtyAndRefresh(true, true, true, gitDir)
+        findGitCommonDir(repo.root)?.let { commonDir ->
+            VfsUtil.markDirtyAndRefresh(true, true, true, commonDir)
         }
     }
 
@@ -154,7 +154,7 @@ class GhStackService(private val project: Project) {
         return GhCli(root)
     }
 
-    private fun findGitDir(root: VirtualFile): VirtualFile? {
-        return LocalFileSystem.getInstance().refreshAndFindFileByNioFile(root.toNioPath().resolve(".git"))
+    private fun findGitCommonDir(root: VirtualFile): VirtualFile? {
+        return LocalFileSystem.getInstance().refreshAndFindFileByNioFile(resolveGitCommonDir(root.toNioPath()))
     }
 }
