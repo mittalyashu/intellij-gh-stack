@@ -1,14 +1,14 @@
-package dev.mittalyashu.ghstack.cli
+package com.github.mittalyashu.ghstack.cli
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import dev.mittalyashu.ghstack.model.PullRequestRef
-import dev.mittalyashu.ghstack.model.StackLayer
-import dev.mittalyashu.ghstack.model.StackView
-import dev.mittalyashu.ghstack.model.TrackedStack
-import dev.mittalyashu.ghstack.model.TrackedStacks
+import com.github.mittalyashu.ghstack.model.PullRequestRef
+import com.github.mittalyashu.ghstack.model.StackLayer
+import com.github.mittalyashu.ghstack.model.StackView
+import com.github.mittalyashu.ghstack.model.TrackedStack
+import com.github.mittalyashu.ghstack.model.TrackedStacks
 
 object StackJson {
     fun parseView(json: String): StackView {

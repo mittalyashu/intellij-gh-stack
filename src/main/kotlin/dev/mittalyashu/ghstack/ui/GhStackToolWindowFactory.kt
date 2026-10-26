@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.ui
+package com.github.mittalyashu.ghstack.ui
 
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project

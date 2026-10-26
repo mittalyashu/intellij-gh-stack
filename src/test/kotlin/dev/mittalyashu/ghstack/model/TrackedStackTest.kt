@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.model
+package com.github.mittalyashu.ghstack.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

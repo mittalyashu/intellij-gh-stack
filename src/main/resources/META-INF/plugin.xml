@@ -1,5 +1,5 @@
 <idea-plugin>
-    <id>dev.mittalyashu.ghstack</id>
+    <id>com.github.mittalyashu.ghstack</id>
     <name>GH Stack</name>
     <vendor url="https://github.com/mittalyashu">mittalyashu</vendor>
 
@@ -31,19 +31,19 @@
     <extensions defaultExtensionNs="com.intellij">
         <applicationConfigurable
                 parentId="tools"
-                id="dev.mittalyashu.ghstack.settings"
-                instance="dev.mittalyashu.ghstack.settings.GhStackConfigurable"
+                id="com.github.mittalyashu.ghstack.settings"
+                instance="com.github.mittalyashu.ghstack.settings.GhStackConfigurable"
                 displayName="GH Stack"/>
 
         <changesViewContent
                 tabName="GHStack"
-                className="dev.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"
-                predicateClassName="dev.mittalyashu.ghstack.vcs.GhStackContentPredicate"
-                displayNameSupplierClassName="dev.mittalyashu.ghstack.vcs.GhStackTabNameSupplier"/>
+                className="com.github.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"
+                predicateClassName="com.github.mittalyashu.ghstack.vcs.GhStackContentPredicate"
+                displayNameSupplierClassName="com.github.mittalyashu.ghstack.vcs.GhStackTabNameSupplier"/>
 
         <toolWindow
                 id="GH Stack"
-                factoryClass="dev.mittalyashu.ghstack.ui.GhStackToolWindowFactory"
+                factoryClass="com.github.mittalyashu.ghstack.ui.GhStackToolWindowFactory"
                 anchor="bottom"
                 icon="AllIcons.Vcs.Branch"
                 canCloseContents="false"/>

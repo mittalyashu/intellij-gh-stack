@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.cli
+package com.github.mittalyashu.ghstack.cli
 
 data class GhResult(
     val exitCode: Int,

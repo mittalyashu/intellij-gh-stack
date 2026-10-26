@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.ui
+package com.github.mittalyashu.ghstack.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
@@ -12,9 +12,9 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
-import dev.mittalyashu.ghstack.GhStackBundle
-import dev.mittalyashu.ghstack.model.TrackedStack
-import dev.mittalyashu.ghstack.service.GhStackService
+import com.github.mittalyashu.ghstack.GhStackBundle
+import com.github.mittalyashu.ghstack.model.TrackedStack
+import com.github.mittalyashu.ghstack.service.GhStackService
 import java.awt.Dimension
 import javax.swing.DefaultListModel
 import javax.swing.JComponent
