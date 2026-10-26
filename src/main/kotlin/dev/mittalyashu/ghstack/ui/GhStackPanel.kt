@@ -371,6 +371,18 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
             override fun run(indicator: ProgressIndicator) {
                 val outcome = command()
+                outcome.stashToRestore?.let { stash ->
+                    if (!service.restoreStash(stash)) {
+                        ApplicationManager.getApplication().invokeLater({
+                            Messages.showErrorDialog(
+                                project,
+                                GhStackBundle.message("stash.restore.missing", stash.message),
+                                GhStackBundle.message("notification.error"),
+                            )
+                        }, ModalityState.any())
+                    }
+                }
+                service.refreshGit()
                 ApplicationManager.getApplication().invokeLater({
                     if (!outcome.result.succeeded) {
                         Messages.showErrorDialog(
@@ -379,20 +391,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                             GhStackBundle.message("notification.error")
                         )
                     }
-                    outcome.stashToRestore?.let { stash ->
-                        if (!service.restoreStash(stash)) {
-                            Messages.showErrorDialog(
-                                project,
-                                GhStackBundle.message("stash.restore.missing", stash.message),
-                                GhStackBundle.message("notification.error"),
-                            )
-                        }
-                    }
-                    // Repository.update() must not run on the EDT.
-                    ApplicationManager.getApplication().executeOnPooledThread {
-                        service.refreshGit()
-                        ApplicationManager.getApplication().invokeLater({ refresh() }, ModalityState.any())
-                    }
+                    refresh()
                 }, ModalityState.any())
             }
         })

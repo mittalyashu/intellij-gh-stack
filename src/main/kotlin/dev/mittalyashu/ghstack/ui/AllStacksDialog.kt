@@ -58,6 +58,10 @@ class AllStacksDialog(
         ) {
             override fun run(indicator: ProgressIndicator) {
                 val result = service.checkout(target)
+                // Repository.update() must not run on the EDT.
+                if (result.succeeded) {
+                    service.refreshGit()
+                }
                 ApplicationManager.getApplication().invokeLater({
                     if (!result.succeeded) {
                         Messages.showErrorDialog(
@@ -66,7 +70,6 @@ class AllStacksDialog(
                             GhStackBundle.message("notification.error"),
                         )
                     } else {
-                        service.refreshGit()
                         close(OK_EXIT_CODE)
                     }
                 }, ModalityState.any())
