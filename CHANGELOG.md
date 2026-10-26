@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Prompt to enable `git rerere` before initializing or rebasing a stack, so repeated conflict resolutions are reused
+
 ## [0.1.0]
 
 Initial release. A thin IntelliJ wrapper around the GitHub CLI

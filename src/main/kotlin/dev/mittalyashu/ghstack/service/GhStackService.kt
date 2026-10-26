@@ -80,6 +80,55 @@ class GhStackService(private val project: Project) {
     }
 
     /**
+     * Whether the effective git config has `rerere.enabled=true`. Unset, `false`, and a failed `git config`
+     * all count as disabled, matching how git itself decides whether to record resolutions.
+     */
+    fun isRerereEnabled(): Boolean {
+        val root = primaryRepository()?.root ?: return false
+        return gitConfig(root, "--get", "--bool", "rerere.enabled") == "true"
+    }
+
+    /**
+     * Whether rerere was previously declined. Reads the project-local `gh-stack.rerere-declined` key that
+     * `gh stack` itself writes, so the plugin and a terminal `gh stack` agree on "don't ask again".
+     */
+    fun isRerereDeclined(): Boolean {
+        val root = primaryRepository()?.root ?: return false
+        return gitConfig(root, "--get", "gh-stack.rerere-declined") == "true"
+    }
+
+    /**
+     * Enables rerere in the project-local config, matching `gh stack`'s `ensureRerere`: both `rerere.enabled`
+     * and `rerere.autoupdate`. Returns false when a write fails. Must not run on the EDT.
+     */
+    fun enableRerere(): Boolean {
+        val root = primaryRepository()?.root ?: return false
+        return setGitConfig(root, "rerere.enabled", "true") &&
+            setGitConfig(root, "rerere.autoupdate", "true")
+    }
+
+    /** Records a declined prompt in project-local config so neither the plugin nor `gh stack` asks again. */
+    fun declineRerere(): Boolean {
+        val root = primaryRepository()?.root ?: return false
+        return setGitConfig(root, "gh-stack.rerere-declined", "true")
+    }
+
+    private fun gitConfig(root: VirtualFile, vararg params: String): String? {
+        val handler = GitLineHandler(project, root, GitCommand.CONFIG)
+        handler.addParameters(*params)
+        handler.setSilent(true)
+        val result = Git.getInstance().runCommand(handler)
+        return if (result.success()) result.output.firstOrNull()?.trim() else null
+    }
+
+    private fun setGitConfig(root: VirtualFile, key: String, value: String): Boolean {
+        val handler = GitLineHandler(project, root, GitCommand.CONFIG)
+        handler.addParameters("--local", key, value)
+        handler.setSilent(true)
+        return Git.getInstance().runCommand(handler).success()
+    }
+
+    /**
      * Stashes local changes (including untracked files), runs the rebase, and reports the stash to restore
      * only if the rebase succeeded. After a failed rebase (e.g. a conflict) the stash is kept and the error mentions it.
      */
