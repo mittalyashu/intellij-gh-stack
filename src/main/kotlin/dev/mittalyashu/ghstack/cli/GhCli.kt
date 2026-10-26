@@ -22,7 +22,16 @@ class GhCli(
 
     fun checkout(target: String): GhResult = run("stack", "checkout", target)
 
-    fun init(branchName: String): GhResult = run("stack", "init", branchName)
+    fun init(branchName: String, base: String? = null): GhResult {
+        val args = mutableListOf("stack", "init")
+        if (!base.isNullOrBlank()) {
+            args += listOf("--base", base)
+        }
+        args += branchName
+        return run(*args.toTypedArray())
+    }
+
+    fun unstackLocal(): GhResult = run("stack", "unstack", "--local")
 
     fun rebase(vararg flags: String): GhResult {
         val timeoutMs = if (flags.contains("--abort")) DEFAULT_TIMEOUT_MS else REBASE_TIMEOUT_MS
