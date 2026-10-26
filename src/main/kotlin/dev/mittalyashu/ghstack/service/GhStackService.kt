@@ -1,17 +1,17 @@
-package dev.mittalyashu.ghstack.service
+package com.github.mittalyashu.ghstack.service
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
-import dev.mittalyashu.ghstack.GhStackBundle
-import dev.mittalyashu.ghstack.cli.GhCli
-import dev.mittalyashu.ghstack.cli.GhExitCodes
-import dev.mittalyashu.ghstack.cli.GhResult
-import dev.mittalyashu.ghstack.cli.StackJson
-import dev.mittalyashu.ghstack.model.StackLoadResult
-import dev.mittalyashu.ghstack.model.TrackedStacks
+import com.github.mittalyashu.ghstack.GhStackBundle
+import com.github.mittalyashu.ghstack.cli.GhCli
+import com.github.mittalyashu.ghstack.cli.GhExitCodes
+import com.github.mittalyashu.ghstack.cli.GhResult
+import com.github.mittalyashu.ghstack.cli.StackJson
+import com.github.mittalyashu.ghstack.model.StackLoadResult
+import com.github.mittalyashu.ghstack.model.TrackedStacks
 import git4idea.commands.Git
 import git4idea.commands.GitCommand
 import git4idea.commands.GitLineHandler

@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.cli
+package com.github.mittalyashu.ghstack.cli
 
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
@@ -6,7 +6,7 @@ import com.intellij.execution.configurations.PathEnvironmentVariableUtil
 import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.execution.process.ProcessOutput
 import com.intellij.openapi.diagnostic.Logger
-import dev.mittalyashu.ghstack.settings.GhStackSettings
+import com.github.mittalyashu.ghstack.settings.GhStackSettings
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 

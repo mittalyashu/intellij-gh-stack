@@ -1,6 +1,6 @@
-package dev.mittalyashu.ghstack.ui
+package com.github.mittalyashu.ghstack.ui
 
-import dev.mittalyashu.ghstack.model.StackLayer
+import com.github.mittalyashu.ghstack.model.StackLayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

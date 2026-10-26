@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.vcs
+package com.github.mittalyashu.ghstack.vcs
 
 import com.intellij.openapi.project.Project
 import git4idea.repo.GitRepositoryManager

@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.service
+package com.github.mittalyashu.ghstack.service
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

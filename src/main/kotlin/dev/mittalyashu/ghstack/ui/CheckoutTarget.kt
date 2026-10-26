@@ -1,6 +1,6 @@
-package dev.mittalyashu.ghstack.ui
+package com.github.mittalyashu.ghstack.ui
 
-import dev.mittalyashu.ghstack.model.StackLayer
+import com.github.mittalyashu.ghstack.model.StackLayer
 
 /**
  * The branch to check out for the selected row, or null when there is nothing to check out.

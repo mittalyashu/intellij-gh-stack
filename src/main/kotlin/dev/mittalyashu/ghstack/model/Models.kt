@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack.model
+package com.github.mittalyashu.ghstack.model
 
 data class StackView(
     val trunk: String,

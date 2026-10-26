@@ -1,4 +1,4 @@
-package dev.mittalyashu.ghstack
+package com.github.mittalyashu.ghstack
 
 import com.intellij.DynamicBundle
 import org.jetbrains.annotations.NonNls
