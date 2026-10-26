@@ -265,13 +265,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     private fun addBranch() {
-        val name = Messages.showInputDialog(
-            project,
-            GhStackBundle.message("dialog.add.branch.prompt"),
-            GhStackBundle.message("dialog.add.branch.title"),
-            Messages.getQuestionIcon(),
-        )?.trim().orEmpty()
-        if (name.isEmpty()) return
+        val name = AddBranchDialog(project).showAndGetBranchName() ?: return
         runGh(GhStackBundle.message("progress.add")) {
             service.addBranch(name)
         }
