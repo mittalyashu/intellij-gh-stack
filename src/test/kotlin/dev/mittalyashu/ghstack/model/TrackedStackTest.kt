@@ -26,4 +26,22 @@ class TrackedStackTest {
         assertTrue(stack.isLocal)
         assertEquals("Local stack  (main)  (empty)", stack.displayLabel())
     }
+
+    @Test
+    fun checkoutTargetForRemoteStackIsTheStackNumber() {
+        val stack = TrackedStack(number = 7, trunk = "main", branches = listOf("auth", "api"))
+        assertEquals("7", stack.checkoutTarget())
+    }
+
+    @Test
+    fun checkoutTargetForLocalStackIsItsTopBranch() {
+        val stack = TrackedStack(trunk = "main", branches = listOf("auth", "api"))
+        assertEquals("api", stack.checkoutTarget())
+    }
+
+    @Test
+    fun checkoutTargetForEmptyLocalStackIsTheTrunk() {
+        val stack = TrackedStack(trunk = "main", branches = emptyList())
+        assertEquals("main", stack.checkoutTarget())
+    }
 }
