@@ -24,7 +24,7 @@ object StackJson {
 
     fun parseTrackedFile(json: String): TrackedStacks {
         val root = JsonParser.parseString(json).asObjectOrNull()
-            ?: error(".git/gh-stack is not a JSON object")
+            ?: error("<common-dir>/gh-stack is not a JSON object")
         val stacks = root.getAsJsonArray("stacks")?.mapNotNull { parseTrackedStack(it) }.orEmpty()
         return TrackedStacks(
             repository = root.string("repository"),
