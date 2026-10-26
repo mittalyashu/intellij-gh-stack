@@ -104,7 +104,8 @@ class GhStackService(private val project: Project) {
 
     /**
      * Applies and drops [stash] through Git4Idea's unstash, which shows its own conflict resolver and keeps the stash
-     * on conflict. Runs a modal progress, so call it from the EDT. Returns false when the stash can't be found.
+     * on conflict. The progress is modal and the conflict resolver requires a background thread, so call it off the
+     * EDT. Returns false when the stash can't be found.
      */
     fun restoreStash(stash: StashRef): Boolean {
         val repo = primaryRepository() ?: return false
