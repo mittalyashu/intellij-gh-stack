@@ -4,14 +4,18 @@
     <vendor url="https://github.com/mittalyashu">mittalyashu</vendor>
 
     <description><![CDATA[
-        <p>A thin IntelliJ wrapper around the GitHub CLI <code>gh stack</code> extension.</p>
+        <p>A thin IntelliJ wrapper around the GitHub CLI <code>gh stack</code> extension. View and navigate
+        stacked pull requests without leaving the IDE.</p>
         <ul>
-            <li>View the current stacked PR chain in the Git tool window</li>
+            <li>View the current stacked PR chain in the Git tool window, or in a dedicated <b>GH Stack</b> tool window</li>
+            <li>See each layer's PR number, plus its merged / queued / needs-rebase status and the current branch</li>
             <li>Check out a specific layer</li>
             <li>Add a branch on top of the stack</li>
-            <li>Rebase the stack (whole, upstack, downstack), then continue or abort</li>
-            <li>Optionally stash uncommitted changes and untracked files around a rebase (configurable)</li>
+            <li>Initialize a new stack</li>
+            <li>Rebase the stack (whole, upstack, downstack, or without trunk), then continue or abort</li>
+            <li>Optionally stash uncommitted changes and untracked files around a rebase (ask / always / never)</li>
             <li>Switch between locally tracked stacks</li>
+            <li>Configure the <code>gh</code> executable path in Settings | Tools | GH Stack</li>
         </ul>
         <p>Requires <a href="https://cli.github.com/">GitHub CLI</a> and
         <code>gh extension install github/gh-stack</code>.</p>
