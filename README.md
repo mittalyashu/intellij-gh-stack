@@ -6,6 +6,18 @@ Your support will help me keep this project going. Thank you!
 
 [![Buy me a coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://payments.cashfree.com/forms/intellij-gh-stack)
 
+## Motivation
+
+I use `gh stack` heavily every day, across multiple repositories in my organization, and I genuinely felt the need for IDE support. Stacked PR workflows involve a lot of context switching between the terminal and the editor, and I wanted that to be seamless.
+
+Since neither the GitHub team nor JetBrains seems likely to ship something like this in the short term, I decided to build it myself. I use this plugin actively on a daily basis, so it's built around real, everyday workflows rather than hypothetical ones.
+
+## How I built it?
+
+This repository makes heavy use of AI assistance to build features. I'm also still new to Kotlin, so I rely on AI to move faster and learn the language and the IntelliJ Platform APIs as I go.
+
+I review and test what goes in, and the plugin is used daily for real work, but the code may not always be idiomatic Kotlin yet. If you spot something that could be cleaner, issues and PRs are very welcome. See the [Motivation](#motivation) section for why I'm building this in the first place.
+
 ## What it does
 
 The plugin talks to `gh` in the project Git root. It does not reimplement stacked PRs.
