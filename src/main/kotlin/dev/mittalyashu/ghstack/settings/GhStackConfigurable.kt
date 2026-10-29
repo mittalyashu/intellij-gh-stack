@@ -1,6 +1,7 @@
 package com.github.mittalyashu.ghstack.settings
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
@@ -72,9 +73,9 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
                 val cli = GhCli(workingDirectory) { configuredPath }
                 describeGhVersions(detectGhVersions(cli::version, cli::extensionList))
             }.getOrElse { GhStackBundle.message("settings.versions.error") }
-            application.invokeLater {
+            application.invokeLater({
                 if (versionRequest.get() == request) component.text = text
-            }
+            }, ModalityState.any())
         }
     }
 }
