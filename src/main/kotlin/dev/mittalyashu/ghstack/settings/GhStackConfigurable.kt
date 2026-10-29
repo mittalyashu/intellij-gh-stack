@@ -30,9 +30,6 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
             row {
                 comment(GhStackBundle.message("settings.gh.path.comment"))
             }
-            row(GhStackBundle.message("settings.versions.label")) {
-                versionText = text(GhStackBundle.message("settings.versions.loading")).component
-            }
             row(GhStackBundle.message("settings.stash.label")) {
                 comboBox(
                     StashMode.entries,
@@ -44,6 +41,9 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
             }
             row {
                 comment(GhStackBundle.message("settings.stash.comment"))
+            }
+            row(GhStackBundle.message("settings.versions.label")) {
+                versionText = text(GhStackBundle.message("settings.versions.loading")).component
             }
         }
         versionText?.let(::refreshVersions)
