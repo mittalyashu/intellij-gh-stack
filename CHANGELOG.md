@@ -24,6 +24,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 - Optional stash of uncommitted changes and untracked files around a rebase (ask / always / never)
 - Switch between locally tracked stacks
 - Settings to configure the `gh` executable path
+- Show the detected `gh` CLI and `gh stack` extension versions in the settings panel
 
 [Unreleased]: https://github.com/mittalyashu/intellij-gh-stack/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/mittalyashu/intellij-gh-stack/releases/tag/v0.1.0
