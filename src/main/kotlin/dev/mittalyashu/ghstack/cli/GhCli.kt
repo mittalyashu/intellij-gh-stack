@@ -35,6 +35,8 @@ class GhCli(
 
     fun version(): GhResult = run("--version")
 
+    fun extensionList(): GhResult = run("extension", "list")
+
     private fun run(vararg args: String): GhResult = run(DEFAULT_TIMEOUT_MS, *args)
 
     private fun run(timeoutMs: Int, vararg args: String): GhResult {

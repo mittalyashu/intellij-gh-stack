@@ -1,5 +1,6 @@
 package com.github.mittalyashu.ghstack.settings
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.SimpleListCellRenderer
@@ -7,32 +8,59 @@ import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.github.mittalyashu.ghstack.GhStackBundle
+import com.github.mittalyashu.ghstack.cli.GhCli
+import com.github.mittalyashu.ghstack.service.describeGhVersions
+import com.github.mittalyashu.ghstack.service.detectGhVersions
+import java.nio.file.Path
+import javax.swing.JEditorPane
 
 class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.title")) {
     private val settings = GhStackSettings.getInstance()
 
-    override fun createPanel(): DialogPanel = panel {
-        row(GhStackBundle.message("settings.gh.path.label")) {
-            textFieldWithBrowseButton()
-                .bindText(
-                    { settings.ghExecutablePath },
-                    { settings.ghExecutablePath = it.trim() },
+    override fun createPanel(): DialogPanel {
+        var versionText: JEditorPane? = null
+        val panel = panel {
+            row(GhStackBundle.message("settings.gh.path.label")) {
+                textFieldWithBrowseButton()
+                    .bindText(
+                        { settings.ghExecutablePath },
+                        { settings.ghExecutablePath = it.trim() },
+                    )
+            }
+            row {
+                comment(GhStackBundle.message("settings.gh.path.comment"))
+            }
+            row(GhStackBundle.message("settings.versions.label")) {
+                versionText = text(GhStackBundle.message("settings.versions.loading")).component
+            }
+            row(GhStackBundle.message("settings.stash.label")) {
+                comboBox(
+                    StashMode.entries,
+                    SimpleListCellRenderer.create("") { GhStackBundle.message(it.messageKey()) },
+                ).bindItem(
+                    { settings.stashMode },
+                    { settings.stashMode = it ?: StashMode.ASK },
                 )
+            }
+            row {
+                comment(GhStackBundle.message("settings.stash.comment"))
+            }
         }
-        row {
-            comment(GhStackBundle.message("settings.gh.path.comment"))
-        }
-        row(GhStackBundle.message("settings.stash.label")) {
-            comboBox(
-                StashMode.entries,
-                SimpleListCellRenderer.create("") { GhStackBundle.message(it.messageKey()) },
-            ).bindItem(
-                { settings.stashMode },
-                { settings.stashMode = it ?: StashMode.ASK },
-            )
-        }
-        row {
-            comment(GhStackBundle.message("settings.stash.comment"))
+        versionText?.let(::refreshVersions)
+        return panel
+    }
+
+    private fun refreshVersions(component: JEditorPane) {
+        val application = ApplicationManager.getApplication()
+        application.executeOnPooledThread {
+            val text = runCatching {
+                val workingDirectory = Path.of(
+                    System.getProperty("user.home") ?: System.getProperty("java.io.tmpdir"),
+                )
+                val cli = GhCli(workingDirectory)
+                describeGhVersions(detectGhVersions(cli::version, cli::extensionList))
+            }.getOrElse { GhStackBundle.message("settings.versions.error") }
+            application.invokeLater { component.text = text }
         }
     }
 }
