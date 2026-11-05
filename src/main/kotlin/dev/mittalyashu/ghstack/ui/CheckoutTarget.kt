@@ -10,9 +10,10 @@ import com.github.mittalyashu.ghstack.model.StackLayer
 internal fun checkoutTargetFor(layer: StackLayer?): String? =
     layer?.takeIf { !it.isCurrent }?.name
 
-/**
- * The hint shown for the selected layer's "Checkout" action: what it does and the `gh stack checkout` command it runs.
- * Null when there is nothing to check out, so the disabled action has no hint.
- */
+/** What the selected layer's "Checkout" action does, or null when there is nothing to check out. */
 internal fun checkoutDescriptionFor(layer: StackLayer?): String? =
-    checkoutTargetFor(layer)?.let { GhStackBundle.message("panel.checkout.description", it) }
+    checkoutTargetFor(layer)?.let { GhStackBundle.message("panel.checkout.description") }
+
+/** The `gh stack checkout` command the selected layer's "Checkout" action runs, or null when there is nothing to check out. */
+internal fun checkoutCommandFor(layer: StackLayer?): String? =
+    checkoutTargetFor(layer)?.let { GhStackBundle.message("panel.checkout.command", it) }

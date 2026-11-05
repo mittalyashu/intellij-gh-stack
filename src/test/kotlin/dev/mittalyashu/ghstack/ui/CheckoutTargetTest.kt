@@ -3,7 +3,6 @@ package com.github.mittalyashu.ghstack.ui
 import com.github.mittalyashu.ghstack.model.StackLayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CheckoutTargetTest {
@@ -23,19 +22,25 @@ class CheckoutTargetTest {
     }
 
     @Test
-    fun nonCurrentLayerDescriptionShowsWhatItDoesAndTheCommand() {
-        val description = checkoutDescriptionFor(StackLayer(name = "feature-b")).orEmpty()
-        assertTrue(description.contains("Check out this branch"))
-        assertTrue(description.contains("gh stack checkout feature-b"))
+    fun nonCurrentLayerDescriptionShowsWhatItDoes() {
+        assertEquals("Check out this branch.", checkoutDescriptionFor(StackLayer(name = "feature-b")))
     }
 
     @Test
-    fun currentLayerHasNoDescription() {
-        assertNull(checkoutDescriptionFor(StackLayer(name = "feature-b", isCurrent = true)))
+    fun nonCurrentLayerCommandShowsTheCommand() {
+        assertEquals("gh stack checkout feature-b", checkoutCommandFor(StackLayer(name = "feature-b")))
     }
 
     @Test
-    fun nothingSelectedHasNoDescription() {
+    fun currentLayerHasNoDescriptionOrCommand() {
+        val layer = StackLayer(name = "feature-b", isCurrent = true)
+        assertNull(checkoutDescriptionFor(layer))
+        assertNull(checkoutCommandFor(layer))
+    }
+
+    @Test
+    fun nothingSelectedHasNoDescriptionOrCommand() {
         assertNull(checkoutDescriptionFor(null))
+        assertNull(checkoutCommandFor(null))
     }
 }
