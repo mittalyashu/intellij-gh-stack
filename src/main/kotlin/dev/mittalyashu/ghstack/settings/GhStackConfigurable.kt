@@ -34,6 +34,18 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
         row {
             comment(GhStackBundle.message("settings.stash.comment"))
         }
+        row(GhStackBundle.message("settings.console.label")) {
+            comboBox(
+                ConsoleVerbosity.entries,
+                SimpleListCellRenderer.create("") { GhStackBundle.message(it.messageKey()) },
+            ).bindItem(
+                { settings.consoleVerbosity },
+                { settings.consoleVerbosity = it ?: ConsoleVerbosity.COMMANDS },
+            )
+        }
+        row {
+            comment(GhStackBundle.message("settings.console.comment"))
+        }
     }
 }
 
@@ -41,4 +53,10 @@ private fun StashMode.messageKey(): String = when (this) {
     StashMode.ASK -> "settings.stash.ask"
     StashMode.ALWAYS -> "settings.stash.always"
     StashMode.NEVER -> "settings.stash.never"
+}
+
+private fun ConsoleVerbosity.messageKey(): String = when (this) {
+    ConsoleVerbosity.OFF -> "settings.console.off"
+    ConsoleVerbosity.COMMANDS -> "settings.console.commands"
+    ConsoleVerbosity.FULL -> "settings.console.full"
 }

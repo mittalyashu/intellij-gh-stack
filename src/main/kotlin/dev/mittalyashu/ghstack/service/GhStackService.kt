@@ -38,7 +38,7 @@ class GhStackService(private val project: Project) {
 
     fun loadCurrentStack(): StackLoadResult {
         val root = gitRoot() ?: return StackLoadResult.Failed("This project is not under Git.")
-        val result = GhCli(root).viewJson()
+        val result = cliFor(root).viewJson()
         if (result.exitCode == GhExitCodes.NOT_IN_STACK) {
             return StackLoadResult.NotInStack
         }
@@ -199,9 +199,11 @@ class GhStackService(private val project: Project) {
         }
     }
 
-    private fun requireCli(): GhCli {
-        val root = gitRoot() ?: error("This project is not under Git.")
-        return GhCli(root)
+    private fun requireCli(): GhCli = cliFor(gitRoot() ?: error("This project is not under Git."))
+
+    private fun cliFor(root: Path): GhCli {
+        val console = GhStackConsoleService.getInstance(project)
+        return GhCli(root, onCommandRun = console::record)
     }
 
     private fun findGitCommonDir(root: VirtualFile): VirtualFile? {

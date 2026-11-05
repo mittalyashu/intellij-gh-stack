@@ -8,12 +8,16 @@ import com.intellij.openapi.components.Storage
 
 enum class StashMode { ASK, ALWAYS, NEVER }
 
+/** How much of each `gh` invocation is written to the GH Stack console. */
+enum class ConsoleVerbosity { OFF, COMMANDS, FULL }
+
 @Service(Service.Level.APP)
 @State(name = "GhStackSettings", storages = [Storage("ghstack.xml")])
 class GhStackSettings : PersistentStateComponent<GhStackSettings.State> {
     class State {
         var stashMode: StashMode = StashMode.ASK
         var ghExecutablePath: String = ""
+        var consoleVerbosity: ConsoleVerbosity = ConsoleVerbosity.COMMANDS
     }
 
     private var state = State()
@@ -28,6 +32,12 @@ class GhStackSettings : PersistentStateComponent<GhStackSettings.State> {
         get() = state.ghExecutablePath
         set(value) {
             state.ghExecutablePath = value
+        }
+
+    var consoleVerbosity: ConsoleVerbosity
+        get() = state.consoleVerbosity
+        set(value) {
+            state.consoleVerbosity = value
         }
 
     override fun getState(): State = state

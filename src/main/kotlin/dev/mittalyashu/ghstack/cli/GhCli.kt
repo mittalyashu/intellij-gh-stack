@@ -10,9 +10,20 @@ import com.github.mittalyashu.ghstack.settings.GhStackSettings
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 
+/** One completed `gh` invocation, reported so it can be shown in the GH Stack console. */
+data class GhCommandRun(
+    val commandLine: String,
+    val exitCode: Int,
+    val stdout: String,
+    val stderr: String,
+) {
+    val succeeded: Boolean get() = exitCode == 0
+}
+
 class GhCli(
     private val workingDirectory: Path,
     private val configuredPath: () -> String = { GhStackSettings.getInstance().ghExecutablePath },
+    private val onCommandRun: (GhCommandRun) -> Unit = {},
 ) {
     private val log = Logger.getInstance(GhCli::class.java)
 
@@ -42,11 +53,11 @@ class GhCli(
             PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS(name)?.absolutePath
         }
         val command = when (invocation) {
-            is GhInvocation.Missing -> return GhResult(
-                exitCode = 127,
-                stdout = "",
-                stderr = invocation.message,
-            )
+            is GhInvocation.Missing -> {
+                val result = GhResult(exitCode = 127, stdout = "", stderr = invocation.message)
+                report("gh ${args.joinToString(" ")}", result)
+                return result
+            }
 
             is GhInvocation.Ready -> invocation.command
         }
@@ -73,17 +84,34 @@ class GhCli(
             CapturingProcessHandler(commandLine).runProcess(timeoutMs)
         } catch (e: ExecutionException) {
             log.warn("Could not start ${command.first()}", e)
-            return GhResult(
+            val result = GhResult(
                 exitCode = 127,
                 stdout = "",
                 stderr = "Could not start ${command.first()}: ${e.message ?: e.javaClass.simpleName}",
             )
+            report(commandLine.commandLineString, result)
+            return result
         }
-        return GhResult(
+        val result = GhResult(
             exitCode = output.exitCode,
             stdout = output.stdout,
             stderr = output.stderr,
         )
+        report(commandLine.commandLineString, result)
+        return result
+    }
+
+    private fun report(commandLine: String, result: GhResult) {
+        runCatching {
+            onCommandRun(
+                GhCommandRun(
+                    commandLine = commandLine,
+                    exitCode = result.exitCode,
+                    stdout = result.stdout,
+                    stderr = result.stderr,
+                )
+            )
+        }.onFailure { log.warn("Could not report the gh command run", it) }
     }
 
     private companion object {
