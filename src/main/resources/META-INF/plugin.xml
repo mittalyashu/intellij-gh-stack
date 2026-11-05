@@ -17,7 +17,7 @@
             <li>Prompt to enable <code>git rerere</code> before initializing or rebasing a stack, so repeated conflict resolutions are reused</li>
             <li>Switch between locally tracked stacks</li>
             <li>Show clear next steps when <code>gh</code> or the gh stack extension is missing, or the current branch is not in a stack</li>
-            <li>Log every <code>gh</code> command the plugin runs, with its output and exit code, in the <b>Console</b> tab of the <b>GH Stack</b> tool window</li>
+            <li>Log every <code>gh</code> command the plugin runs, with its output and exit code, in the <b>GH Console</b> tab of the Git tool window or the <b>Console</b> tab of the <b>GH Stack</b> tool window</li>
             <li>Configure the <code>gh</code> executable path and how much the console logs in Settings | Tools | GH Stack</li>
         </ul>
         <p>Requires <a href="https://cli.github.com/">GitHub CLI</a>,
@@ -42,6 +42,12 @@
                 className="com.github.mittalyashu.ghstack.vcs.GhStackChangesViewContentProvider"
                 predicateClassName="com.github.mittalyashu.ghstack.vcs.GhStackContentPredicate"
                 displayNameSupplierClassName="com.github.mittalyashu.ghstack.vcs.GhStackTabNameSupplier"/>
+
+        <changesViewContent
+                tabName="GHStackConsole"
+                className="com.github.mittalyashu.ghstack.vcs.GhStackConsoleContentProvider"
+                predicateClassName="com.github.mittalyashu.ghstack.vcs.GhStackContentPredicate"
+                displayNameSupplierClassName="com.github.mittalyashu.ghstack.vcs.GhStackConsoleTabNameSupplier"/>
 
         <toolWindow
                 id="GH Stack"

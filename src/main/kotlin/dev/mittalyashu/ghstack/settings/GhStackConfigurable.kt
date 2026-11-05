@@ -48,6 +48,18 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
             row {
                 comment(GhStackBundle.message("settings.stash.comment"))
             }
+            row(GhStackBundle.message("settings.console.label")) {
+                comboBox(
+                    ConsoleVerbosity.entries,
+                    SimpleListCellRenderer.create("") { GhStackBundle.message(it.messageKey()) },
+                ).bindItem(
+                    { settings.consoleVerbosity },
+                    { settings.consoleVerbosity = it ?: ConsoleVerbosity.COMMANDS },
+                )
+            }
+            row {
+                comment(GhStackBundle.message("settings.console.comment"))
+            }
             row(GhStackBundle.message("settings.versions.label")) {
                 versionText = text(GhStackBundle.message("settings.versions.loading")).component
             }
@@ -72,24 +84,12 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
                 val workingDirectory = Path.of(
                     System.getProperty("user.home") ?: System.getProperty("java.io.tmpdir"),
                 )
-                val cli = GhCli(workingDirectory) { configuredPath }
+                val cli = GhCli(workingDirectory, configuredPath = { configuredPath })
                 describeGhVersions(detectGhVersions(cli::version, cli::extensionList))
             }.getOrElse { GhStackBundle.message("settings.versions.error") }
             application.invokeLater({
                 if (versionRequest.get() == request) component.text = text
             }, ModalityState.any())
-        }
-        row(GhStackBundle.message("settings.console.label")) {
-            comboBox(
-                ConsoleVerbosity.entries,
-                SimpleListCellRenderer.create("") { GhStackBundle.message(it.messageKey()) },
-            ).bindItem(
-                { settings.consoleVerbosity },
-                { settings.consoleVerbosity = it ?: ConsoleVerbosity.COMMANDS },
-            )
-        }
-        row {
-            comment(GhStackBundle.message("settings.console.comment"))
         }
     }
 }

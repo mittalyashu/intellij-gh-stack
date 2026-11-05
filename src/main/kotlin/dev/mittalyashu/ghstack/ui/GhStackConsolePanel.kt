@@ -23,7 +23,7 @@ import java.awt.BorderLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 
-/** Read-only console in the GH Stack tool window that shows every `gh` invocation made by the plugin. */
+/** Read-only console that shows every `gh` invocation made by the plugin. */
 class GhStackConsolePanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
     private val console: ConsoleView =
         TextConsoleBuilderFactory.getInstance().createBuilder(project).console
