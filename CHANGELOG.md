@@ -20,6 +20,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 - Add a branch on top of the stack
 - Initialize a new stack
 - Rebase the stack (whole, upstack, downstack, or without trunk), plus continue and abort
+- Rebase from a specific layer upward by right-clicking it in the stack list
 - Prompt to enable `git rerere` before initializing or rebasing a stack, so repeated conflict resolutions are reused
 - Optional stash of uncommitted changes and untracked files around a rebase (ask / always / never)
 - Switch between locally tracked stacks

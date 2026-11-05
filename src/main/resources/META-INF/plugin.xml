@@ -13,6 +13,7 @@
             <li>Add a branch on top of the stack</li>
             <li>Initialize a new stack</li>
             <li>Rebase the stack (whole, upstack, downstack, or without trunk), then continue or abort</li>
+            <li>Rebase from any layer upward by right-clicking it in the stack list</li>
             <li>Optionally stash uncommitted changes and untracked files around a rebase (ask / always / never)</li>
             <li>Prompt to enable <code>git rerere</code> before initializing or rebasing a stack, so repeated conflict resolutions are reused</li>
             <li>Switch between locally tracked stacks</li>
