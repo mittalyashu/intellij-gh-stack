@@ -17,7 +17,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 - View the current stacked PR chain in the Git tool window, or in a dedicated **GH Stack** tool window
 - Per-layer PR number, current branch, and merged / queued / needs-rebase status
 - Check out a specific layer
-- Explain the layer **Checkout** action and the `gh stack checkout <branch>` command it runs
+- Explain every panel action with a tooltip, including the `gh stack` command it runs in a code block
 - Add a branch on top of the stack
 - Initialize a new stack
 - Rebase the stack (whole, upstack, downstack, or without trunk), plus continue and abort

@@ -8,14 +8,12 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.ex.ActionUtil
-import com.intellij.openapi.actionSystem.impl.ActionMenuItem
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
-import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DoNotAskOption
 import com.intellij.openapi.ui.MessageDialogBuilder
@@ -53,7 +51,6 @@ import javax.swing.DefaultListModel
 import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JPanel
-import javax.swing.JPopupMenu
 import javax.swing.ListSelectionModel
 import javax.swing.SwingConstants
 import javax.swing.event.PopupMenuEvent
@@ -166,9 +163,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun createPopupGroup(): DefaultActionGroup {
         val group = DefaultActionGroup()
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.checkout"),
             checkoutDescriptionFor(selectedLayer()),
+            checkoutCommandFor(selectedLayer()),
             AllIcons.Actions.CheckOut,
         ) {
             override fun actionPerformed(e: AnActionEvent) = checkoutSelected()
@@ -178,9 +176,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             }
         })
         group.addSeparator()
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.rebase.from.here"),
             GhStackBundle.message("panel.rebase.from.here.description"),
+            selectedLayer()?.let { GhStackBundle.message("panel.rebase.from.here.command", it.name) },
             AllIcons.Vcs.Merge,
         ) {
             override fun actionPerformed(e: AnActionEvent) {
@@ -197,42 +196,47 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun createActions(): DefaultActionGroup {
         val group = DefaultActionGroup()
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.refresh"),
-            null,
+            GhStackBundle.message("panel.refresh.description"),
+            GhStackBundle.message("panel.refresh.command"),
             AllIcons.Actions.Refresh,
         ) {
             override fun actionPerformed(e: AnActionEvent) = refresh()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.add.branch"),
-            null,
+            GhStackBundle.message("panel.add.branch.description"),
+            GhStackBundle.message("panel.add.branch.command"),
             AllIcons.General.Add,
         ) {
             override fun actionPerformed(e: AnActionEvent) = addBranch()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.all.stacks"),
-            null,
+            GhStackBundle.message("panel.all.stacks.description"),
+            GhStackBundle.message("panel.all.stacks.command"),
             AllIcons.Vcs.Branch,
         ) {
             override fun actionPerformed(e: AnActionEvent) = showAllStacks()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.init.stack"),
-            null,
+            GhStackBundle.message("panel.init.stack.description"),
+            GhStackBundle.message("panel.init.stack.command"),
             AllIcons.Actions.NewFolder,
         ) {
             override fun actionPerformed(e: AnActionEvent) = initStack()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
         group.add(createRebaseGroup())
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.rebase.continue"),
-            null,
+            GhStackBundle.message("panel.rebase.continue.description"),
+            GhStackBundle.message("panel.rebase.continue.command"),
             AllIcons.Actions.Resume,
         ) {
             override fun actionPerformed(e: AnActionEvent) = rebaseContinue()
@@ -241,9 +245,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 e.presentation.isVisible = service.isRebaseInProgress()
             }
         })
-        group.add(object : DumbAwareAction(
+        group.add(object : TooltipAction(
             GhStackBundle.message("panel.rebase.abort"),
-            null,
+            GhStackBundle.message("panel.rebase.abort.description"),
+            GhStackBundle.message("panel.rebase.abort.command"),
             AllIcons.Actions.Cancel,
         ) {
             override fun actionPerformed(e: AnActionEvent) = rebaseAbort()
@@ -256,23 +261,24 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     private fun createRebaseGroup(): DefaultActionGroup {
-        fun variant(messageKey: String, vararg flags: String) = object : DumbAwareAction(
+        fun variant(messageKey: String, vararg flags: String) = object : TooltipAction(
             GhStackBundle.message(messageKey),
+            GhStackBundle.message("$messageKey.description"),
+            GhStackBundle.message("$messageKey.command"),
         ) {
             override fun actionPerformed(e: AnActionEvent) = rebase(*flags)
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         }
 
-        return DefaultActionGroup(
+        return TooltipActionGroup(
             GhStackBundle.message("panel.rebase"),
-            listOf(
-                variant("panel.rebase.stack"),
-                variant("panel.rebase.upstack", "--upstack"),
-                variant("panel.rebase.downstack", "--downstack"),
-                variant("panel.rebase.no.trunk", "--no-trunk"),
-            ),
+            GhStackBundle.message("panel.rebase.description"),
+            GhStackBundle.message("panel.rebase.command"),
         ).apply {
-            isPopup = true
+            add(variant("panel.rebase.stack"))
+            add(variant("panel.rebase.upstack", "--upstack"))
+            add(variant("panel.rebase.downstack", "--downstack"))
+            add(variant("panel.rebase.no.trunk", "--no-trunk"))
             templatePresentation.icon = AllIcons.Vcs.Merge
             templatePresentation.putClientProperty(ActionUtil.SHOW_TEXT_IN_TOOLBAR, false)
         }
@@ -296,14 +302,6 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun popupMenuCanceled(event: PopupMenuEvent) = Unit
         })
         menu.show(comp, x, y)
-    }
-
-    /** Shows each action's description as a native tooltip, including the command the checkout will run. */
-    private fun installActionTooltips(menu: JPopupMenu) {
-        for (component in menu.components) {
-            val item = component as? ActionMenuItem ?: continue
-            item.toolTipText = item.anAction.templatePresentation.description
-        }
     }
 
     private fun addBranch() {
