@@ -37,7 +37,7 @@ IntelliJ allows extra tabs on the Git / Version Control tool window, so the stac
 
 - IntelliJ IDEA 2024.3 or later
 - [GitHub CLI](https://cli.github.com/) on your PATH
-- `gh extension install github/gh-stack` (v0.2.0 or later for "Rebase stack from here")
+- `gh extension install github/gh-stack` (v0.2.0 or later)
 - `gh auth login`
 
 If `gh` is not on the IDE's PATH, set the executable explicitly under
