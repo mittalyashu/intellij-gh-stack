@@ -56,6 +56,9 @@ class GhCli(
             .withCharset(StandardCharsets.UTF_8)
             .withEnvironment(
                 mapOf(
+                    // Point go-gh (used by gh stack) at the gh binary we invoke, so its `gh auth token`
+                    // fallback works when gh is not on the IDE's PATH. cli/cli exports this to extensions.
+                    "GH_PATH" to command.first(),
                     "GH_PROMPT_DISABLED" to "1",
                     "GH_PAGER" to "cat",
                     "GIT_PAGER" to "cat",
