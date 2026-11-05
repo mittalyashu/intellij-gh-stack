@@ -50,6 +50,8 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
             }
             row(GhStackBundle.message("settings.versions.label")) {
                 versionText = text(GhStackBundle.message("settings.versions.loading")).component
+            }
+            row("") {
                 button(GhStackBundle.message("settings.versions.check")) {
                     checkVersions(versionText, ghPathField)
                 }
