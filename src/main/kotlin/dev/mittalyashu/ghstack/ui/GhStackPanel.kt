@@ -11,6 +11,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonShortcuts
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.ActionMenuItem
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.Logger
@@ -52,15 +53,18 @@ import com.github.mittalyashu.ghstack.settings.StashMode
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import java.awt.BorderLayout
+import java.awt.Component
 import java.awt.FlowLayout
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
+import java.awt.Point
 import javax.swing.DefaultListModel
 import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JPopupMenu
 import javax.swing.ListSelectionModel
 import javax.swing.SwingConstants
+import javax.swing.event.PopupMenuEvent
+import javax.swing.event.PopupMenuListener
 
 class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
     private val service = project.getService(GhStackService::class.java)
@@ -114,13 +118,17 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         add(JBScrollPane(list), BorderLayout.CENTER)
         add(status, BorderLayout.SOUTH)
 
-        list.addMouseListener(object : MouseAdapter() {
-            override fun mousePressed(e: MouseEvent) = selectRowUnderPopupTrigger(e)
-
-            override fun mouseReleased(e: MouseEvent) = selectRowUnderPopupTrigger(e)
+        list.addMouseListener(object : PopupHandler() {
+            override fun invokePopup(comp: Component, x: Int, y: Int) {
+                val point = Point(x, y)
+                val index = list.locationToIndex(point)
+                if (index < 0 || list.getCellBounds(index, index)?.contains(point) != true) return
+                // Right-clicking a row selects it first, like the native Git panel, so the popup acts on that row.
+                list.selectedIndex = index
+                showLayerPopup(comp, x, y)
+            }
         })
         copyBranchNameAction.registerCustomShortcutSet(CommonShortcuts.getCopy(), list)
-        PopupHandler.installSelectionListPopup(list, createPopupGroup(), ActionPlaces.POPUP)
 
         project.messageBus.connect(this).subscribe(
             GitRepository.GIT_REPO_CHANGE,
@@ -273,7 +281,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         val group = DefaultActionGroup()
         group.add(object : DumbAwareAction(
             GhStackBundle.message("panel.checkout"),
-            null,
+            checkoutDescriptionFor(selectedLayer()),
             AllIcons.Actions.CheckOut,
         ) {
             override fun actionPerformed(e: AnActionEvent) = checkoutSelected()
@@ -389,12 +397,27 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         return (list.selectedValue as? StackRow.Layer)?.layer
     }
 
-    /** Right-clicking a row selects it first (like the native Git panel) so the popup acts on that row. */
-    private fun selectRowUnderPopupTrigger(e: MouseEvent) {
-        if (!e.isPopupTrigger) return
-        val index = list.locationToIndex(e.point)
-        if (index >= 0 && list.getCellBounds(index, index)?.contains(e.point) == true) {
-            list.selectedIndex = index
+    private fun showLayerPopup(comp: Component, x: Int, y: Int) {
+        val popup = ActionManager.getInstance().createActionPopupMenu(ActionPlaces.POPUP, createPopupGroup())
+        val menu = popup.component
+        menu.addPopupMenuListener(object : PopupMenuListener {
+            override fun popupMenuWillBecomeVisible(event: PopupMenuEvent) {
+                // The platform's popup menu does not turn action descriptions into menu-item tooltips by itself.
+                installActionTooltips(menu)
+            }
+
+            override fun popupMenuWillBecomeInvisible(event: PopupMenuEvent) = Unit
+
+            override fun popupMenuCanceled(event: PopupMenuEvent) = Unit
+        })
+        menu.show(comp, x, y)
+    }
+
+    /** Shows each action's description as a native tooltip, including the command the checkout will run. */
+    private fun installActionTooltips(menu: JPopupMenu) {
+        for (component in menu.components) {
+            val item = component as? ActionMenuItem ?: continue
+            item.toolTipText = item.anAction.templatePresentation.description
         }
     }
 
