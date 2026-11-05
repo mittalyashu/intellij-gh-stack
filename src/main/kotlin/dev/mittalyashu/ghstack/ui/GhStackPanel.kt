@@ -157,19 +157,34 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     private fun createPopupGroup(): DefaultActionGroup {
-        return DefaultActionGroup(
-            object : DumbAwareAction(
-                GhStackBundle.message("panel.checkout"),
-                null,
-                AllIcons.Actions.CheckOut,
-            ) {
-                override fun actionPerformed(e: AnActionEvent) = checkoutSelected()
-                override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun update(e: AnActionEvent) {
-                    e.presentation.isEnabled = checkoutTargetFor(selectedLayer()) != null
-                }
-            },
-        )
+        val group = DefaultActionGroup()
+        group.add(object : DumbAwareAction(
+            GhStackBundle.message("panel.checkout"),
+            null,
+            AllIcons.Actions.CheckOut,
+        ) {
+            override fun actionPerformed(e: AnActionEvent) = checkoutSelected()
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = checkoutTargetFor(selectedLayer()) != null
+            }
+        })
+        group.addSeparator()
+        group.add(object : DumbAwareAction(
+            GhStackBundle.message("panel.rebase.from.here"),
+            GhStackBundle.message("panel.rebase.from.here.description"),
+            AllIcons.Vcs.Merge,
+        ) {
+            override fun actionPerformed(e: AnActionEvent) {
+                selectedLayer()?.let { rebaseFromHere(it) }
+            }
+
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = selectedLayer() != null
+            }
+        })
+        return group
     }
 
     private fun createActions(): DefaultActionGroup {
@@ -300,7 +315,12 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         }
     }
 
-    private fun rebase(vararg flags: String) {
+    private fun rebase(vararg flags: String) = runRebase(flags.toList())
+
+    /** Rebases [layer] and every layer above it, without rebasing the layers below it. */
+    private fun rebaseFromHere(layer: StackLayer) = runRebase(listOf(layer.name, "--upstack"))
+
+    private fun runRebase(args: List<String>) {
         runTask(GhStackBundle.message("progress.rebase")) {
             val settings = GhStackSettings.getInstance()
             val stash = when (decideRebaseAction(settings.stashMode, service.isDirty())) {
@@ -309,6 +329,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 RebaseAction.PROMPT -> askToStash(settings)
             }
             ensureRerere()
+            val flags = args.toTypedArray()
             if (stash) service.rebaseWithStash(*flags) else RebaseOutcome(service.rebase(*flags))
         }
     }

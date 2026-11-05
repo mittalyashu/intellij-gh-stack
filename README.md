@@ -26,6 +26,7 @@ The plugin talks to `gh` in the project Git root. It does not reimplement stacke
 - Add a branch on top of the stack (`gh stack add`)
 - Check out a layer (`gh stack checkout <branch>`)
 - Rebase the stack (`gh stack rebase`, with `--upstack`, `--downstack`, `--no-trunk`), plus continue / abort
+- Rebase from a specific layer upward by right-clicking it in the stack list
 - Optionally stash uncommitted changes and untracked files around a rebase and restore them on success (Settings | Tools | GH Stack: ask / always / never)
 - Prompt to enable `git rerere` before a stack is initialized or rebased, so repeated conflict resolutions are reused
 - Switch among locally tracked stacks (reads `<git-common-dir>/gh-stack`, then `gh stack checkout`)
@@ -36,7 +37,7 @@ IntelliJ allows extra tabs on the Git / Version Control tool window, so the stac
 
 - IntelliJ IDEA 2024.3 or later
 - [GitHub CLI](https://cli.github.com/) on your PATH
-- `gh extension install github/gh-stack`
+- `gh extension install github/gh-stack` (v0.2.0 or later)
 - `gh auth login`
 
 If `gh` is not on the IDE's PATH, set the executable explicitly under
