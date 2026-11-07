@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.util.messages.Topic
 import com.github.mittalyashu.ghstack.GhStackBundle
 import com.github.mittalyashu.ghstack.cli.GhCli
 import com.github.mittalyashu.ghstack.cli.GhExitCodes
@@ -28,12 +29,86 @@ data class StashRef(val hash: String, val message: String)
 /** The rebase result, plus the stash to restore when the rebase succeeded with changes stashed. */
 data class RebaseOutcome(val result: GhResult, val stashToRestore: StashRef? = null)
 
+/** Listener for [GhStackService.REPOSITORY_SELECTED]. */
+fun interface RepositorySelectionListener {
+    fun repositorySelected()
+}
+
 @Service(Service.Level.PROJECT)
 class GhStackService(private val project: Project) {
-    fun gitRoot(): Path? = primaryRepository()?.root?.toNioPath()
+    companion object {
+        /** Published when the panel's repository selector changes, so every open panel stays in sync. */
+        val REPOSITORY_SELECTED: Topic<RepositorySelectionListener> =
+            Topic.create("GH Stack repository selected", RepositorySelectionListener::class.java)
+    }
 
-    fun primaryRepository(): GitRepository? {
-        return GitRepositoryManager.getInstance(project).repositories.firstOrNull()
+    /**
+     * The repository explicitly picked in the panel, or null while the selector follows the project's own
+     * repository. Volatile because panel actions read it from background threads.
+     */
+    @Volatile
+    private var selectedRoot: Path? = null
+
+    /**
+     * The root pinned for a task running on the current thread. A task snapshots the selection when it starts and
+     * pins it here, so a repository switch made from another panel mid-task cannot split the task's git and `gh`
+     * commands across two repositories.
+     */
+    private val pinnedRoot = ThreadLocal<Path?>()
+
+    private fun effectiveRoot(): Path? = pinnedRoot.get() ?: selectedRoot
+
+    fun gitRoot(): Path? = selectedRepository()?.root?.toNioPath()
+
+    /** Git repositories in the project, ordered for the panel's selector (the project's own repository first). */
+    fun repositoryChoices(): List<RepositoryChoice> = buildChoices(gitRepositories())
+
+    /** The explicitly selected root, or null while the selector follows the project's own repository. */
+    fun selectedRepositoryRoot(): Path? = selectedRoot
+
+    /**
+     * The repository the panel's actions run against: the selected one while it still exists, otherwise the
+     * project's own repository, falling back to the first Git root when the project itself is not a repository.
+     */
+    fun selectedRepository(): GitRepository? {
+        val repositories = gitRepositories()
+        if (repositories.isEmpty()) return null
+        val choice = chooseRepository(buildChoices(repositories), effectiveRoot()) ?: return null
+        return repositories.firstOrNull { it.root.toNioPath().normalize() == choice.root }
+    }
+
+    /** Selects [root] for every panel action and notifies the other open panels. Call from the EDT. */
+    fun selectRepository(root: Path) {
+        selectedRoot = root.normalize()
+        project.messageBus.syncPublisher(REPOSITORY_SELECTED).repositorySelected()
+    }
+
+    /**
+     * Pins [root] as the repository for every service call made by [block] on the calling thread, then restores the
+     * previous pin. Panel tasks use this so a repository selected mid-task elsewhere cannot change their target.
+     */
+    fun <T> withPinnedRepository(root: Path?, block: () -> T): T {
+        val previous = pinnedRoot.get()
+        pinnedRoot.set(root)
+        return try {
+            block()
+        } finally {
+            pinnedRoot.set(previous)
+        }
+    }
+
+    private fun gitRepositories(): List<GitRepository> =
+        GitRepositoryManager.getInstance(project).repositories
+
+    private fun buildChoices(repositories: List<GitRepository>): List<RepositoryChoice> {
+        val submoduleRoots = repositories.flatMap { repository ->
+            repository.submodules.map { repository.root.toNioPath().resolve(it.path).normalize() }
+        }.toSet()
+        return buildRepositoryChoices(
+            repositories = repositories.map { it.root.toNioPath().normalize() },
+            projectBaseDir = project.basePath?.let(Path::of),
+            submoduleRoots = submoduleRoots,
+        )
     }
 
     fun loadCurrentStack(): StackLoadResult {
@@ -71,7 +146,7 @@ class GhStackService(private val project: Project) {
      * (`git status --porcelain --untracked-files=all`), so untracked files count. Must not run on the EDT.
      */
     fun isDirty(): Boolean {
-        val repo = primaryRepository() ?: return false
+        val repo = selectedRepository() ?: return false
         val handler = GitLineHandler(project, repo.root, GitCommand.STATUS)
         handler.addParameters("--porcelain", "--untracked-files=all")
         handler.setSilent(true)
@@ -84,7 +159,7 @@ class GhStackService(private val project: Project) {
      * all count as disabled, matching how git itself decides whether to record resolutions.
      */
     fun isRerereEnabled(): Boolean {
-        val root = primaryRepository()?.root ?: return false
+        val root = selectedRepository()?.root ?: return false
         return gitConfig(root, "--get", "--bool", "rerere.enabled") == "true"
     }
 
@@ -93,7 +168,7 @@ class GhStackService(private val project: Project) {
      * `gh stack` itself writes, so the plugin and a terminal `gh stack` agree on "don't ask again".
      */
     fun isRerereDeclined(): Boolean {
-        val root = primaryRepository()?.root ?: return false
+        val root = selectedRepository()?.root ?: return false
         return gitConfig(root, "--get", "gh-stack.rerere-declined") == "true"
     }
 
@@ -102,14 +177,14 @@ class GhStackService(private val project: Project) {
      * and `rerere.autoupdate`. Returns false when a write fails. Must not run on the EDT.
      */
     fun enableRerere(): Boolean {
-        val root = primaryRepository()?.root ?: return false
+        val root = selectedRepository()?.root ?: return false
         return setGitConfig(root, "rerere.enabled", "true") &&
             setGitConfig(root, "rerere.autoupdate", "true")
     }
 
     /** Records a declined prompt in project-local config so neither the plugin nor `gh stack` asks again. */
     fun declineRerere(): Boolean {
-        val root = primaryRepository()?.root ?: return false
+        val root = selectedRepository()?.root ?: return false
         return setGitConfig(root, "gh-stack.rerere-declined", "true")
     }
 
@@ -133,7 +208,7 @@ class GhStackService(private val project: Project) {
      * only if the rebase succeeded. After a failed rebase (e.g. a conflict) the stash is kept and the error mentions it.
      */
     fun rebaseWithStash(vararg flags: String): RebaseOutcome {
-        val repo = primaryRepository() ?: error("This project is not under Git.")
+        val repo = selectedRepository() ?: error("This project is not under Git.")
         val message = GhStackBundle.message("stash.name")
         val headBefore = stashHead(repo.root)
         stashLocalChanges(repo.root, message)?.let { stashError ->
@@ -157,7 +232,7 @@ class GhStackService(private val project: Project) {
      * EDT. Returns false when the stash can't be found.
      */
     fun restoreStash(stash: StashRef): Boolean {
-        val repo = primaryRepository() ?: return false
+        val repo = selectedRepository() ?: return false
         val info = runCatching { loadStashStack(project, repo.root) }
             .getOrNull()
             ?.firstOrNull { it.hash.asString() == stash.hash }
@@ -187,11 +262,11 @@ class GhStackService(private val project: Project) {
 
     fun rebaseAbort(): GhResult = requireCli().rebaseAbort()
 
-    /** True while a rebase (interactive, merge or apply) is paused in the primary repository, including in linked worktrees. */
-    fun isRebaseInProgress(): Boolean = primaryRepository()?.isRebaseInProgress == true
+    /** True while a rebase (interactive, merge or apply) is paused in the selected repository, including in linked worktrees. */
+    fun isRebaseInProgress(): Boolean = selectedRepository()?.isRebaseInProgress == true
 
     fun refreshGit() {
-        val repo = primaryRepository() ?: return
+        val repo = selectedRepository() ?: return
         VfsUtil.markDirtyAndRefresh(true, true, true, repo.root)
         repo.update()
         findGitCommonDir(repo.root)?.let { commonDir ->

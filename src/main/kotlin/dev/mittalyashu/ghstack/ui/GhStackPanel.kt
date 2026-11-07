@@ -1,5 +1,7 @@
 package com.github.mittalyashu.ghstack.ui
 
+import com.intellij.dvcs.repo.VcsRepositoryManager
+import com.intellij.dvcs.repo.VcsRepositoryMappingListener
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
@@ -16,6 +18,7 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DoNotAskOption
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
@@ -38,6 +41,8 @@ import com.github.mittalyashu.ghstack.model.StackView
 import com.github.mittalyashu.ghstack.service.GhStackService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
 import com.github.mittalyashu.ghstack.service.RebaseAction
+import com.github.mittalyashu.ghstack.service.RepositoryChoice
+import com.github.mittalyashu.ghstack.service.RepositorySelectionListener
 import com.github.mittalyashu.ghstack.service.RerereAction
 import com.github.mittalyashu.ghstack.service.decideRebaseAction
 import com.github.mittalyashu.ghstack.service.decideRerereAction
@@ -46,6 +51,7 @@ import com.github.mittalyashu.ghstack.settings.StashMode
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import java.awt.BorderLayout
+import java.awt.FlowLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.DefaultListModel
@@ -68,8 +74,20 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         cellRenderer = StackRowRenderer()
         emptyText.text = GhStackBundle.message("status.loading")
     }
+    private val repositoryCombo = ComboBox<RepositoryChoice>().apply {
+        renderer = RepositoryRenderer()
+        addActionListener { onRepositorySelected() }
+    }
+    private val repositoryRow = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+        add(JBLabel(GhStackBundle.message("panel.repository.label")))
+        add(repositoryCombo)
+        border = JBUI.Borders.empty(0, 4, 6, 12)
+        isVisible = false
+    }
     private val refreshAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
     private var loading = false
+    private var refreshQueued = false
+    private var syncingRepository = false
     private lateinit var actionToolbar: ActionToolbar
 
     init {
@@ -77,7 +95,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             .createActionToolbar(ActionPlaces.TOOLBAR, createActions(), true)
         actionToolbar.targetComponent = this
 
-        add(actionToolbar.component, BorderLayout.NORTH)
+        add(JPanel(BorderLayout()).apply {
+            add(actionToolbar.component, BorderLayout.NORTH)
+            add(repositoryRow, BorderLayout.SOUTH)
+        }, BorderLayout.NORTH)
         add(JBScrollPane(list), BorderLayout.CENTER)
         add(status, BorderLayout.SOUTH)
 
@@ -92,6 +113,19 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             GitRepository.GIT_REPO_CHANGE,
             GitRepositoryChangeListener { scheduleRefresh() },
         )
+        project.messageBus.connect(this).subscribe(
+            VcsRepositoryManager.VCS_REPOSITORY_MAPPING_UPDATED,
+            VcsRepositoryMappingListener { scheduleRefresh() },
+        )
+        project.messageBus.connect(this).subscribe(
+            GhStackService.REPOSITORY_SELECTED,
+            RepositorySelectionListener {
+                if (!syncingRepository) {
+                    syncRepositorySelector()
+                    scheduleRefresh()
+                }
+            },
+        )
 
         scheduleRefresh()
     }
@@ -103,9 +137,20 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         refreshAlarm.addRequest({ refresh() }, 250)
     }
 
+    /**
+     * Rebuilds the repository selector and loads the selected repository's stack. A refresh requested while a
+     * load is in flight (or a selection made mid-load) is queued and run once the current load finishes, so a
+     * quick repository switch is never dropped.
+     */
     private fun refresh() {
-        if (loading || Disposer.isDisposed(this)) return
+        if (Disposer.isDisposed(this)) return
+        syncRepositorySelector()
+        if (loading) {
+            refreshQueued = true
+            return
+        }
         loading = true
+        val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
         status.text = GhStackBundle.message("status.loading")
         ProgressManager.getInstance().run(object : Task.Backgroundable(
             project,
@@ -117,11 +162,54 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 ApplicationManager.getApplication().invokeLater({
                     loading = false
                     if (!Disposer.isDisposed(this@GhStackPanel)) {
-                        render(result)
+                        val selectionChanged =
+                            service.selectedRepository()?.root?.toNioPath()?.normalize() != root
+                        // The in-flight result belongs to the repository captured above, so don't show it under
+                        // another repository's selector; reload instead.
+                        if (!selectionChanged) {
+                            render(result)
+                        }
+                        if (refreshQueued || selectionChanged) {
+                            refreshQueued = false
+                            refresh()
+                        }
                     }
                 }, ModalityState.any())
             }
         })
+    }
+
+    /** Mirrors the service's repository list and selection into the combo box. */
+    private fun syncRepositorySelector() {
+        val choices = service.repositoryChoices()
+        val selectedRoot = service.selectedRepositoryRoot() ?: choices.firstOrNull()?.root
+        syncingRepository = true
+        try {
+            val current = (0 until repositoryCombo.itemCount).map { repositoryCombo.getItemAt(it) }
+            if (current != choices) {
+                repositoryCombo.removeAllItems()
+                choices.forEach { repositoryCombo.addItem(it) }
+            }
+            repositoryCombo.selectedItem = choices.firstOrNull { it.root == selectedRoot }
+                ?: choices.firstOrNull()
+        } finally {
+            syncingRepository = false
+        }
+        repositoryRow.isVisible = choices.size > 1
+    }
+
+    /** Applies the user's repository choice to the service and reloads that repository's stack. */
+    private fun onRepositorySelected() {
+        if (syncingRepository) return
+        val choice = repositoryCombo.selectedItem as? RepositoryChoice ?: return
+        syncingRepository = true
+        try {
+            // The service publishes synchronously, so the flag keeps this panel from handling its own event twice.
+            service.selectRepository(choice.root)
+        } finally {
+            syncingRepository = false
+        }
+        refresh()
     }
 
     private fun render(result: StackLoadResult) {
@@ -441,31 +529,44 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun runGh(title: String, command: () -> GhResult) = runTask(title) { RebaseOutcome(command()) }
 
     private fun runTask(title: String, command: () -> RebaseOutcome) {
+        // Pin the repository for the whole task so switching to another repository mid-rebase cannot split the
+        // stash, the gh command, and the stash restore across different repositories.
+        val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
+        repositoryCombo.isEnabled = false
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
             override fun run(indicator: ProgressIndicator) {
-                val outcome = command()
-                outcome.stashToRestore?.let { stash ->
-                    if (!service.restoreStash(stash)) {
-                        ApplicationManager.getApplication().invokeLater({
+                try {
+                    val outcome = service.withPinnedRepository(root) {
+                        val outcome = command()
+                        outcome.stashToRestore?.let { stash ->
+                            if (!service.restoreStash(stash)) {
+                                ApplicationManager.getApplication().invokeLater({
+                                    Messages.showErrorDialog(
+                                        project,
+                                        GhStackBundle.message("stash.restore.missing", stash.message),
+                                        GhStackBundle.message("notification.error"),
+                                    )
+                                }, ModalityState.any())
+                            }
+                        }
+                        service.refreshGit()
+                        outcome
+                    }
+                    ApplicationManager.getApplication().invokeLater({
+                        if (!outcome.result.succeeded) {
                             Messages.showErrorDialog(
                                 project,
-                                GhStackBundle.message("stash.restore.missing", stash.message),
-                                GhStackBundle.message("notification.error"),
+                                outcome.result.errorText(),
+                                GhStackBundle.message("notification.error")
                             )
-                        }, ModalityState.any())
-                    }
+                        }
+                        refresh()
+                    }, ModalityState.any())
+                } finally {
+                    ApplicationManager.getApplication().invokeLater({
+                        repositoryCombo.isEnabled = true
+                    }, ModalityState.any())
                 }
-                service.refreshGit()
-                ApplicationManager.getApplication().invokeLater({
-                    if (!outcome.result.succeeded) {
-                        Messages.showErrorDialog(
-                            project,
-                            outcome.result.errorText(),
-                            GhStackBundle.message("notification.error")
-                        )
-                    }
-                    refresh()
-                }, ModalityState.any())
             }
         })
     }
@@ -476,6 +577,24 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 private sealed class StackRow {
     data class Trunk(val name: String) : StackRow()
     data class Layer(val layer: StackLayer) : StackRow()
+}
+
+private class RepositoryRenderer : ColoredListCellRenderer<RepositoryChoice>() {
+    override fun customizeCellRenderer(
+        list: JList<out RepositoryChoice>,
+        value: RepositoryChoice?,
+        index: Int,
+        selected: Boolean,
+        hasFocus: Boolean,
+    ) {
+        ipad = JBUI.insets(2, 4)
+        value ?: return
+        icon = if (value.isSubmodule) AllIcons.Nodes.Module else AllIcons.Vcs.Branch
+        append(value.label, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+        if (value.isSubmodule) {
+            append("  ${GhStackBundle.message("panel.repository.submodule")}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+        }
+    }
 }
 
 private class StackRowRenderer : ColoredListCellRenderer<StackRow>() {
