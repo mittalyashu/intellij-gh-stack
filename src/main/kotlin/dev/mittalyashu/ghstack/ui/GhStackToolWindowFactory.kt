@@ -5,14 +5,26 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
+import com.github.mittalyashu.ghstack.GhStackBundle
 import git4idea.repo.GitRepositoryManager
 
 class GhStackToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
+        val contentFactory = ContentFactory.getInstance()
+
         val panel = GhStackPanel(project)
-        val content = ContentFactory.getInstance().createContent(panel.component(), "", false)
-        content.setDisposer(panel)
-        toolWindow.contentManager.addContent(content)
+        val stackContent = contentFactory.createContent(panel.component(), GhStackBundle.message("tab.title"), false)
+        stackContent.setDisposer(panel)
+        toolWindow.contentManager.addContent(stackContent)
+
+        val console = GhStackConsolePanel(project)
+        val consoleContent = contentFactory.createContent(
+            console.component(),
+            GhStackBundle.message("console.tab.title"),
+            false,
+        )
+        consoleContent.setDisposer(console)
+        toolWindow.contentManager.addContent(consoleContent)
     }
 
     override fun shouldBeAvailable(project: Project): Boolean {

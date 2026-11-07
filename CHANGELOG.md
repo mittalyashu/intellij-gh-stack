@@ -26,6 +26,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 - Switch between locally tracked stacks
 - Settings to configure the `gh` executable path
 - Show the detected `gh` CLI and `gh stack` extension versions in the settings panel
+- Log every `gh` command with its output and exit code in the **GH Console** tab of the Git tool window and the **Console** tab of the **GH Stack** tool window
 
 [Unreleased]: https://github.com/mittalyashu/intellij-gh-stack/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/mittalyashu/intellij-gh-stack/releases/tag/v0.1.0

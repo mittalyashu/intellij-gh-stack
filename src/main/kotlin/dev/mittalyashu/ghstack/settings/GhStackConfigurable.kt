@@ -48,6 +48,18 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
             row {
                 comment(GhStackBundle.message("settings.stash.comment"))
             }
+            row(GhStackBundle.message("settings.console.label")) {
+                comboBox(
+                    ConsoleVerbosity.entries,
+                    SimpleListCellRenderer.create("") { GhStackBundle.message(it.messageKey()) },
+                ).bindItem(
+                    { settings.consoleVerbosity },
+                    { settings.consoleVerbosity = it ?: ConsoleVerbosity.COMMANDS },
+                )
+            }
+            row {
+                comment(GhStackBundle.message("settings.console.comment"))
+            }
             row(GhStackBundle.message("settings.versions.label")) {
                 versionText = text(GhStackBundle.message("settings.versions.loading")).component
             }
@@ -72,7 +84,7 @@ class GhStackConfigurable : BoundConfigurable(GhStackBundle.message("settings.ti
                 val workingDirectory = Path.of(
                     System.getProperty("user.home") ?: System.getProperty("java.io.tmpdir"),
                 )
-                val cli = GhCli(workingDirectory) { configuredPath }
+                val cli = GhCli(workingDirectory, configuredPath = { configuredPath })
                 describeGhVersions(detectGhVersions(cli::version, cli::extensionList))
             }.getOrElse { GhStackBundle.message("settings.versions.error") }
             application.invokeLater({
@@ -86,4 +98,10 @@ private fun StashMode.messageKey(): String = when (this) {
     StashMode.ASK -> "settings.stash.ask"
     StashMode.ALWAYS -> "settings.stash.always"
     StashMode.NEVER -> "settings.stash.never"
+}
+
+private fun ConsoleVerbosity.messageKey(): String = when (this) {
+    ConsoleVerbosity.OFF -> "settings.console.off"
+    ConsoleVerbosity.COMMANDS -> "settings.console.commands"
+    ConsoleVerbosity.FULL -> "settings.console.full"
 }
