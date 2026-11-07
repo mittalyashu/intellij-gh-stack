@@ -25,7 +25,6 @@ The plugin talks to `gh` in the selected Git repository: the project's Git repos
 - Visual view of the current stack (`gh stack view --json`)
 - Add a branch on top of the stack (`gh stack add`)
 - Check out a layer (`gh stack checkout <branch>`)
-- Copy the selected branch name with Ctrl/Command+C in the stack list
 - Rebase the stack (`gh stack rebase`, with `--upstack`, `--downstack`, `--no-trunk`), plus continue / abort
 - Rebase from a specific layer upward by right-clicking it in the stack list
 - Optionally stash uncommitted changes and untracked files around a rebase and restore them on success (Settings | Tools | GH Stack: ask / always / never)
