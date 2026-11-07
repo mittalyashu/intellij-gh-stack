@@ -158,23 +158,35 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             false,
         ) {
             override fun run(indicator: ProgressIndicator) {
-                val result = service.loadCurrentStack()
-                ApplicationManager.getApplication().invokeLater({
-                    loading = false
-                    if (!Disposer.isDisposed(this@GhStackPanel)) {
-                        val selectionChanged =
-                            service.selectedRepository()?.root?.toNioPath()?.normalize() != root
-                        // The in-flight result belongs to the repository captured above, so don't show it under
-                        // another repository's selector; reload instead.
-                        if (!selectionChanged) {
-                            render(result)
+                var result: StackLoadResult? = null
+                try {
+                    result = service.loadCurrentStack()
+                } finally {
+                    val loaded = result
+                    ApplicationManager.getApplication().invokeLater({
+                        loading = false
+                        if (!Disposer.isDisposed(this@GhStackPanel)) {
+                            val selectionChanged =
+                                service.selectedRepository()?.root?.toNioPath()?.normalize() != root
+                            // The in-flight result belongs to the repository captured above, so don't show it under
+                            // another repository's selector; reload instead.
+                            if (!selectionChanged) {
+                                if (loaded != null) {
+                                    render(loaded)
+                                } else {
+                                    // The load threw; don't leave the panel stuck on the loading placeholder.
+                                    val message = GhStackBundle.message("status.load.failed")
+                                    status.text = message
+                                    list.emptyText.text = message
+                                }
+                            }
+                            if (refreshQueued || selectionChanged) {
+                                refreshQueued = false
+                                refresh()
+                            }
                         }
-                        if (refreshQueued || selectionChanged) {
-                            refreshQueued = false
-                            refresh()
-                        }
-                    }
-                }, ModalityState.any())
+                    }, ModalityState.any())
+                }
             }
         })
     }
