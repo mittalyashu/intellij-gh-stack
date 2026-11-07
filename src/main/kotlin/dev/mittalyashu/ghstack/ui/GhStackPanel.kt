@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CommonShortcuts
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.application.ApplicationManager
@@ -89,6 +90,17 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private var refreshQueued = false
     private var syncingRepository = false
     private lateinit var actionToolbar: ActionToolbar
+    private val copyBranchNameAction = object : DumbAwareAction(
+        GhStackBundle.message("panel.copy.branch"),
+        null,
+        AllIcons.Actions.Copy,
+    ) {
+        override fun actionPerformed(e: AnActionEvent) = copyBranchName(list.selectedValue)
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = list.selectedValue != null
+        }
+    }
 
     init {
         actionToolbar = ActionManager.getInstance()
@@ -107,6 +119,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
             override fun mouseReleased(e: MouseEvent) = selectRowUnderPopupTrigger(e)
         })
+        copyBranchNameAction.registerCustomShortcutSet(CommonShortcuts.getCopy(), list)
         PopupHandler.installSelectionListPopup(list, createPopupGroup(), ActionPlaces.POPUP)
 
         project.messageBus.connect(this).subscribe(
@@ -284,6 +297,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 e.presentation.isEnabled = selectedLayer() != null
             }
         })
+        group.addSeparator()
+        group.add(copyBranchNameAction)
         return group
     }
 
@@ -586,11 +601,6 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     override fun dispose() {}
 }
 
-private sealed class StackRow {
-    data class Trunk(val name: String) : StackRow()
-    data class Layer(val layer: StackLayer) : StackRow()
-}
-
 private class RepositoryRenderer : ColoredListCellRenderer<RepositoryChoice>() {
     override fun customizeCellRenderer(
         list: JList<out RepositoryChoice>,
@@ -621,7 +631,7 @@ private class StackRowRenderer : ColoredListCellRenderer<StackRow>() {
         when (value) {
             is StackRow.Trunk -> {
                 icon = AllIcons.Nodes.Module
-                append(value.name, SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                append(value.branchName, SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 append("  trunk", SimpleTextAttributes.GRAY_ITALIC_ATTRIBUTES)
             }
 
