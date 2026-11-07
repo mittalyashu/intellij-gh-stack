@@ -10,6 +10,7 @@
             <li>View the current stacked PR chain in the Git tool window, or in a dedicated <b>GH Stack</b> tool window; the view refreshes automatically as branches and Git state change</li>
             <li>See each layer's PR number, plus its merged / queued / needs-rebase status and the current branch</li>
             <li>Check out a specific layer</li>
+            <li>Copy the selected branch name from the stack list with Ctrl/Command+C</li>
             <li>Add a branch on top of the stack</li>
             <li>Initialize a new stack</li>
             <li>Rebase the stack (whole, upstack, downstack, or without trunk), then continue or abort</li>
