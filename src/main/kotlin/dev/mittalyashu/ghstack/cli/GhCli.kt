@@ -6,6 +6,7 @@ import com.intellij.execution.configurations.PathEnvironmentVariableUtil
 import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.execution.process.ProcessOutput
 import com.intellij.openapi.diagnostic.Logger
+import com.github.mittalyashu.ghstack.GhStackBundle
 import com.github.mittalyashu.ghstack.settings.GhStackSettings
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
@@ -29,11 +30,11 @@ class GhCli(
 
     fun viewJson(): GhResult = run("stack", "view", "--json")
 
-    fun addBranch(branchName: String): GhResult = run("stack", "add", branchName)
+    fun addBranch(branchName: String): GhResult = run(MUTATION_TIMEOUT_MS, "stack", "add", branchName)
 
-    fun checkout(target: String): GhResult = run("stack", "checkout", target)
+    fun checkout(target: String): GhResult = run(MUTATION_TIMEOUT_MS, "stack", "checkout", target)
 
-    fun init(branchName: String): GhResult = run("stack", "init", branchName)
+    fun init(branchName: String): GhResult = run(MUTATION_TIMEOUT_MS, "stack", "init", branchName)
 
     fun rebase(vararg flags: String): GhResult {
         val timeoutMs = if (flags.contains("--abort")) DEFAULT_TIMEOUT_MS else REBASE_TIMEOUT_MS
@@ -94,11 +95,10 @@ class GhCli(
             report(commandLine.commandLineString, result)
             return result
         }
-        val result = GhResult(
-            exitCode = output.exitCode,
-            stdout = output.stdout,
-            stderr = output.stderr,
-        )
+        if (output.isTimeout) {
+            log.warn("gh ${args.joinToString(" ")} timed out after ${timeoutMs / 1000}s")
+        }
+        val result = toGhResult(output, timeoutMs)
         report(commandLine.commandLineString, result)
         return result
     }
@@ -118,6 +118,27 @@ class GhCli(
 
     private companion object {
         private const val DEFAULT_TIMEOUT_MS = 60_000
+
+        /** `add`, `checkout` and `init` can fetch, pull and commit, which regularly takes longer than a minute. */
+        private const val MUTATION_TIMEOUT_MS = 5 * 60_000
         private const val REBASE_TIMEOUT_MS = 10 * 60_000
     }
+}
+
+/**
+ * Maps a finished process onto [GhResult]. `runProcess(timeout)` kills the process on timeout and only reports
+ * that through [ProcessOutput.isTimeout], so without this a timeout looks like an arbitrary exit code with no output.
+ */
+internal fun toGhResult(output: ProcessOutput, timeoutMs: Int): GhResult {
+    if (!output.isTimeout) {
+        return GhResult(exitCode = output.exitCode, stdout = output.stdout, stderr = output.stderr)
+    }
+    val message = GhStackBundle.message("error.timed.out", timeoutMs / 1000)
+    val captured = output.stderr.trim()
+    return GhResult(
+        exitCode = GhExitCodes.TIMED_OUT,
+        stdout = output.stdout,
+        stderr = if (captured.isEmpty()) message else "$message\n\n$captured",
+        timeoutMs = timeoutMs,
+    )
 }

@@ -1,5 +1,6 @@
 package com.github.mittalyashu.ghstack.cli
 
+import com.github.mittalyashu.ghstack.GhStackBundle
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -20,5 +21,11 @@ class GhResultTest {
     fun errorTextFallsBackToExitCodeWhenBothAreBlank() {
         val result = GhResult(exitCode = 4, stdout = "", stderr = "")
         assertEquals("Command failed with exit code 4", result.errorText())
+    }
+
+    @Test
+    fun errorTextReportsTimeoutWhenNoOutputWasCaptured() {
+        val result = GhResult(exitCode = GhExitCodes.TIMED_OUT, stdout = "", stderr = "", timeoutMs = 60_000)
+        assertEquals(GhStackBundle.message("error.timed.out", 60), result.errorText())
     }
 }
