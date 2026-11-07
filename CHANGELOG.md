@@ -24,6 +24,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 - Prompt to enable `git rerere` before initializing or rebasing a stack, so repeated conflict resolutions are reused
 - Optional stash of uncommitted changes and untracked files around a rebase (ask / always / never)
 - Switch between locally tracked stacks
+- Repository selector in the panel to switch between the project repository and its Git submodules
 - Settings to configure the `gh` executable path
 - Show the detected `gh` CLI and `gh stack` extension versions in the settings panel
 - Log every `gh` command with its output and exit code in the **GH Console** tab of the Git tool window and the **Console** tab of the **GH Stack** tool window

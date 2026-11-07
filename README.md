@@ -20,7 +20,7 @@ I review and test what goes in, and the plugin is used daily for real work, but 
 
 ## What it does
 
-The plugin talks to `gh` in the project Git root. It does not reimplement stacked PRs.
+The plugin talks to `gh` in the selected Git repository: the project's Git repository by default, or a Git submodule chosen in the panel. It does not reimplement stacked PRs.
 
 - Visual view of the current stack (`gh stack view --json`)
 - Add a branch on top of the stack (`gh stack add`)
@@ -30,6 +30,7 @@ The plugin talks to `gh` in the project Git root. It does not reimplement stacke
 - Optionally stash uncommitted changes and untracked files around a rebase and restore them on success (Settings | Tools | GH Stack: ask / always / never)
 - Prompt to enable `git rerere` before a stack is initialized or rebased, so repeated conflict resolutions are reused
 - Switch among locally tracked stacks (reads `<git-common-dir>/gh-stack`, then `gh stack checkout`)
+- Switch the panel between the project repository and its Git submodules (or any other Git root in the project)
 
 IntelliJ allows extra tabs on the Git / Version Control tool window, so the stack UI appears there as **Stack**. The same panel is also available as a dedicated **GH Stack** tool window (bottom stripe). The command log that records every `gh` invocation sits next to it, as **GH Console** in the Git tool window and as **Console** in the GH Stack tool window.
 
