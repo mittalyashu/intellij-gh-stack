@@ -3,6 +3,8 @@ package com.github.mittalyashu.ghstack.ui
 import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.actionSystem.impl.ActionMenuItem
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.ui.ColorUtil
+import com.intellij.ui.JBColor
 import javax.swing.JPopupMenu
 
 /**
@@ -20,7 +22,13 @@ internal fun htmlTooltip(description: String, command: String?): String = buildS
     append("<html>")
     append(StringUtil.escapeXmlEntities(description))
     if (command != null) {
-        append("<br><pre style=\"margin:4px 0 0 0\">")
+        val bgColor = JBColor.namedColor(
+            "ToolTip.infoBackground",
+            JBColor(0xF5F5F5, 0x4d4e52)
+        )
+        val hexColor = ColorUtil.toHtmlColor(bgColor)
+
+        append("<br><pre style=\"background-color:$hexColor;padding:2px;\">")
         append(StringUtil.escapeXmlEntities(command))
         append("</pre>")
     }
