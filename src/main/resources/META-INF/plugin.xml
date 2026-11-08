@@ -18,6 +18,7 @@
             <li>Optionally stash uncommitted changes and untracked files around a rebase (ask / always / never)</li>
             <li>Prompt to enable <code>git rerere</code> before initializing or rebasing a stack, so repeated conflict resolutions are reused</li>
             <li>Switch between locally tracked stacks from the <b>All stacks</b> column beside the current stack</li>
+            <li>Prune a dangling local stack whose branches are all gone from the <b>All stacks</b> context menu</li>
             <li>Switch the panel between the project repository and its Git submodules</li>
             <li>Show clear next steps when <code>gh</code> or the gh stack extension is missing, or the current branch is not in a stack</li>
             <li>Log every <code>gh</code> command the plugin runs, with its output and exit code, in the <b>Console</b> tab of the <b>GH Stack</b> tool window</li>

@@ -91,7 +91,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         border = JBUI.Borders.empty(0, 4, 6, 12)
         isVisible = false
     }
-    private val allStacksPanel = AllStacksPanel { switchToStack(it) }
+    private val allStacksPanel = AllStacksPanel(
+        onSwitch = { switchToStack(it) },
+        onPrune = { pruneStack(it) },
+    )
     private val refreshAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
     private var loading = false
     private var refreshQueued = false
@@ -200,14 +203,17 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun run(indicator: ProgressIndicator) {
                 var result: StackLoadResult? = null
                 var tracked: Result<TrackedStacks>? = null
+                var localBranches: Set<String> = emptySet()
                 try {
                     // Load the tracked catalog first: it is a local read and shouldn't wait on `gh stack view`.
                     tracked = runCatching { service.loadTrackedStacks() }
                         .getOrElse { Result.failure(it) }
+                    localBranches = service.localBranchNames()
                     result = service.loadCurrentStack()
                 } finally {
                     val loaded = result
                     val trackedResult = tracked
+                    val branches = localBranches
                     ApplicationManager.getApplication().invokeLater({
                         loading = false
                         if (!Disposer.isDisposed(this@GhStackPanel)) {
@@ -216,7 +222,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                             // The in-flight result belongs to the repository captured above, so don't show it under
                             // another repository's selector; reload instead.
                             if (!selectionChanged) {
-                                render(loaded, trackedResult)
+                                render(loaded, trackedResult, branches)
                                 displayedRoot = root
                             }
                             if (refreshQueued || selectionChanged) {
@@ -263,7 +269,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         refresh()
     }
 
-    private fun render(result: StackLoadResult?, tracked: Result<TrackedStacks>?) {
+    private fun render(result: StackLoadResult?, tracked: Result<TrackedStacks>?, localBranches: Set<String>) {
         listModel.clear()
         var view: StackView? = null
         when (result) {
@@ -292,7 +298,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 list.emptyText.text = result.message
             }
         }
-        allStacksPanel.update(tracked, view)
+        allStacksPanel.update(tracked, view, localBranches)
         actionToolbar.updateActionsAsync()
     }
 
@@ -598,6 +604,19 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun switchToStack(stack: TrackedStack) {
         runGh(GhStackBundle.message("progress.checkout")) {
             service.checkout(stack.checkoutTarget())
+        }
+    }
+
+    private fun pruneStack(stack: TrackedStack) {
+        val confirmed = Messages.showYesNoDialog(
+            project,
+            GhStackBundle.message("dialog.prune.confirm", stack.displayLabel()),
+            GhStackBundle.message("dialog.prune.title"),
+            Messages.getWarningIcon(),
+        ) == Messages.YES
+        if (!confirmed) return
+        runGh(GhStackBundle.message("progress.prune")) {
+            service.pruneLocalStack(stack)
         }
     }
 

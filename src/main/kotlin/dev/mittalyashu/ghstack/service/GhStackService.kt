@@ -1,6 +1,7 @@
 package com.github.mittalyashu.ghstack.service
 
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
@@ -12,6 +13,7 @@ import com.github.mittalyashu.ghstack.cli.GhExitCodes
 import com.github.mittalyashu.ghstack.cli.GhResult
 import com.github.mittalyashu.ghstack.cli.StackJson
 import com.github.mittalyashu.ghstack.model.StackLoadResult
+import com.github.mittalyashu.ghstack.model.TrackedStack
 import com.github.mittalyashu.ghstack.model.TrackedStacks
 import git4idea.commands.Git
 import git4idea.commands.GitCommand
@@ -36,6 +38,8 @@ fun interface RepositorySelectionListener {
 
 @Service(Service.Level.PROJECT)
 class GhStackService(private val project: Project) {
+    private val log = Logger.getInstance(GhStackService::class.java)
+
     companion object {
         /** Published when the panel's repository selector changes, so every open panel stays in sync. */
         val REPOSITORY_SELECTED: Topic<RepositorySelectionListener> =
@@ -131,6 +135,83 @@ class GhStackService(private val project: Project) {
             return Result.success(TrackedStacks(stacks = emptyList()))
         }
         return runCatching { StackJson.parseTrackedFile(Files.readString(file)) }
+    }
+
+    /** Short names of the selected repository's local branches, used to tell a dangling tracked stack from a live one. */
+    fun localBranchNames(): Set<String> {
+        val repository = selectedRepository() ?: return emptySet()
+        return repository.branches.localBranches.mapTo(mutableSetOf()) { it.name }
+    }
+
+    /**
+     * Removes [stack] from local tracking only (`gh stack unstack --local`), leaving GitHub untouched.
+     *
+     * A numbered stack is unstacked by number. A local-only stack has no number, so the CLI resolves it from the
+     * current branch; a dangling stack has no local branch to resolve from, so a temporary branch is checked out
+     * around the command and deleted afterwards. Must not run on the EDT.
+     */
+    fun pruneLocalStack(stack: TrackedStack): GhResult {
+        val number = stack.number
+        return if (number != null && number > 0) {
+            requireCli().unstackLocal(number)
+        } else {
+            pruneUnnumberedStack(stack)
+        }
+    }
+
+    private fun pruneUnnumberedStack(stack: TrackedStack): GhResult {
+        val repository = selectedRepository()
+            ?: return pruneFailure(GhStackBundle.message("prune.error.no.repository"))
+        val temporaryBranch = stack.branches.firstOrNull { it.isNotBlank() }
+            ?: return pruneFailure(GhStackBundle.message("prune.error.no.branch"))
+        val originalBranch = currentBranchName(repository.root)
+            ?: return pruneFailure(GhStackBundle.message("prune.error.detached"))
+
+        // Point the temporary branch at HEAD so switching to it is safe even with uncommitted changes.
+        if (!runGit(repository.root, GitCommand.BRANCH, temporaryBranch, "HEAD")) {
+            return pruneFailure(GhStackBundle.message("prune.error.create.branch", temporaryBranch))
+        }
+        var result: GhResult? = null
+        var cleanupError: String? = null
+        try {
+            result = if (runGit(repository.root, GitCommand.CHECKOUT, temporaryBranch)) {
+                requireCli().unstackLocal()
+            } else {
+                pruneFailure(GhStackBundle.message("prune.error.checkout.branch", temporaryBranch))
+            }
+        } finally {
+            if (!runGit(repository.root, GitCommand.CHECKOUT, originalBranch)) {
+                cleanupError = GhStackBundle.message("prune.error.restore.branch", originalBranch)
+            }
+            if (!runGit(repository.root, GitCommand.BRANCH, "-D", temporaryBranch)) {
+                val deleteError = GhStackBundle.message("prune.error.delete.branch", temporaryBranch)
+                cleanupError = cleanupError?.let { "$it\n$deleteError" } ?: deleteError
+            }
+        }
+        cleanupError?.let { return pruneFailure(it) }
+        return result ?: pruneFailure(GhStackBundle.message("prune.error.unknown"))
+    }
+
+    private fun pruneFailure(message: String): GhResult = GhResult(exitCode = 1, stdout = "", stderr = message)
+
+    /** The checked-out branch's short name, or null when HEAD is detached. */
+    private fun currentBranchName(root: VirtualFile): String? {
+        val handler = GitLineHandler(project, root, GitCommand.REV_PARSE)
+        handler.addParameters("--abbrev-ref", "HEAD")
+        handler.setSilent(true)
+        val result = Git.getInstance().runCommand(handler)
+        return result.output.firstOrNull()?.trim()?.takeUnless { it.isEmpty() || it == "HEAD" }
+    }
+
+    private fun runGit(root: VirtualFile, command: GitCommand, vararg params: String): Boolean {
+        val handler = GitLineHandler(project, root, command)
+        handler.addParameters(*params)
+        handler.setSilent(true)
+        val result = Git.getInstance().runCommand(handler)
+        if (!result.success()) {
+            log.warn("git ${command.name().lowercase()} ${params.joinToString(" ")} failed: ${result.errorOutputAsJoinedString}")
+        }
+        return result.success()
     }
 
     fun addBranch(name: String): GhResult = requireCli().addBranch(name)
