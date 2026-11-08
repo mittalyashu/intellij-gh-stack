@@ -46,6 +46,7 @@ import com.github.mittalyashu.ghstack.service.RepositorySelectionListener
 import com.github.mittalyashu.ghstack.service.RerereAction
 import com.github.mittalyashu.ghstack.service.decideRebaseAction
 import com.github.mittalyashu.ghstack.service.decideRerereAction
+import com.github.mittalyashu.ghstack.service.stashChoiceFromExitCode
 import com.github.mittalyashu.ghstack.settings.GhStackSettings
 import com.github.mittalyashu.ghstack.settings.StashMode
 import git4idea.repo.GitRepository
@@ -462,7 +463,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             val stash = when (decideRebaseAction(settings.stashMode, service.isDirty())) {
                 RebaseAction.RUN -> false
                 RebaseAction.STASH -> true
-                RebaseAction.PROMPT -> askToStash(settings)
+                RebaseAction.PROMPT -> askToStash(settings) ?: return@runTask null
             }
             ensureRerere()
             val flags = args.toTypedArray()
@@ -522,18 +523,22 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         return answer
     }
 
-    /** Returns whether to stash. Persists the choice when "remember" is ticked. Call from a background thread. */
-    private fun askToStash(settings: GhStackSettings): Boolean {
-        var stash = false
+    /**
+     * Returns whether to stash, or null when the rebase was cancelled. Persists the choice when "remember" is
+     * ticked. Call from a background thread.
+     */
+    private fun askToStash(settings: GhStackSettings): Boolean? {
+        var answer: Boolean? = null
         ApplicationManager.getApplication().invokeAndWait({
             var remember = false
-            stash = MessageDialogBuilder
-                .yesNo(
+            val choice = MessageDialogBuilder
+                .yesNoCancel(
                     GhStackBundle.message("dialog.stash.title"),
                     GhStackBundle.message("dialog.stash.message"),
                 )
                 .yesText(GhStackBundle.message("dialog.stash.yes"))
                 .noText(GhStackBundle.message("dialog.stash.no"))
+                .cancelText(GhStackBundle.message("dialog.stash.cancel"))
                 .doNotAsk(object : DoNotAskOption.Adapter() {
                     override fun rememberChoice(isSelected: Boolean, exitCode: Int) {
                         remember = isSelected
@@ -541,12 +546,14 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
                     override fun getDoNotShowMessage() = GhStackBundle.message("dialog.stash.remember")
                 })
-                .ask(project)
-            if (remember) {
-                settings.stashMode = if (stash) StashMode.ALWAYS else StashMode.NEVER
+                .show(project)
+            answer = stashChoiceFromExitCode(choice)
+            // A Cancel press still reports the "remember" checkbox, but cancelling must not persist a stash mode.
+            if (answer != null && remember) {
+                settings.stashMode = if (answer == true) StashMode.ALWAYS else StashMode.NEVER
             }
         }, ModalityState.defaultModalityState())
-        return stash
+        return answer
     }
 
     private fun rebaseContinue() {
@@ -576,7 +583,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun runGh(title: String, command: () -> GhResult) = runTask(title) { RebaseOutcome(command()) }
 
-    private fun runTask(title: String, command: () -> RebaseOutcome) {
+    private fun runTask(title: String, command: () -> RebaseOutcome?) {
         // Pin the repository for the whole task so switching to another repository mid-rebase cannot split the
         // stash, the gh command, and the stash restore across different repositories.
         val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
@@ -586,7 +593,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 try {
                     val outcome = service.withPinnedRepository(root) {
                         val outcome = command()
-                        outcome.stashToRestore?.let { stash ->
+                        outcome?.stashToRestore?.let { stash ->
                             if (!service.restoreStash(stash)) {
                                 ApplicationManager.getApplication().invokeLater({
                                     Messages.showErrorDialog(
@@ -601,7 +608,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                         outcome
                     }
                     ApplicationManager.getApplication().invokeLater({
-                        if (!outcome.result.succeeded) {
+                        if (outcome != null && !outcome.result.succeeded) {
                             Messages.showErrorDialog(
                                 project,
                                 outcome.result.errorText(),
