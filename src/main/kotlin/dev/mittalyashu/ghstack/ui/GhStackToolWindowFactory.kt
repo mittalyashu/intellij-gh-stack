@@ -6,7 +6,6 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
 import com.github.mittalyashu.ghstack.GhStackBundle
-import git4idea.repo.GitRepositoryManager
 
 class GhStackToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -25,9 +24,5 @@ class GhStackToolWindowFactory : ToolWindowFactory, DumbAware {
         )
         consoleContent.setDisposer(console)
         toolWindow.contentManager.addContent(consoleContent)
-    }
-
-    override fun shouldBeAvailable(project: Project): Boolean {
-        return GitRepositoryManager.getInstance(project).repositories.isNotEmpty()
     }
 }
