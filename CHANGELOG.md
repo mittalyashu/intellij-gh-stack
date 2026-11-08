@@ -14,7 +14,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 
 ### Added
 
-- View the current stacked PR chain in the Git tool window, or in a dedicated **GH Stack** tool window
+- View the current stacked PR chain in a dedicated **GH Stack** tool window
 - Per-layer PR number, current branch, and merged / queued / needs-rebase status
 - Check out a specific layer
 - Copy the selected branch name from the stack list with Ctrl/Command+C
@@ -29,7 +29,7 @@ Initial release. A thin IntelliJ wrapper around the GitHub CLI
 - Repository selector in the panel to switch between the project repository and its Git submodules
 - Settings to configure the `gh` executable path
 - Show the detected `gh` CLI and `gh stack` extension versions in the settings panel
-- Log every `gh` command with its output and exit code in the **GH Console** tab of the Git tool window and the **Console** tab of the **GH Stack** tool window
+- Log every `gh` command with its output and exit code in the **Console** tab of the **GH Stack** tool window
 
 [Unreleased]: https://github.com/mittalyashu/intellij-gh-stack/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/mittalyashu/intellij-gh-stack/releases/tag/v0.1.0

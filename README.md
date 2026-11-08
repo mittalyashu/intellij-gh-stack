@@ -32,7 +32,7 @@ The plugin talks to `gh` in the selected Git repository: the project's Git repos
 - Switch among locally tracked stacks (reads `<git-common-dir>/gh-stack`, then `gh stack checkout`)
 - Switch the panel between the project repository and its Git submodules (or any other Git root in the project)
 
-IntelliJ allows extra tabs on the Git / Version Control tool window, so the stack UI appears there as **Stack**. The same panel is also available as a dedicated **GH Stack** tool window (bottom stripe). The command log that records every `gh` invocation sits next to it, as **GH Console** in the Git tool window and as **Console** in the GH Stack tool window.
+The stack UI and the command log that records every `gh` invocation live in a dedicated **GH Stack** tool window (bottom stripe), as the **Stack** and **Console** tabs. The plugin no longer adds tabs to the Git / Version Control tool window.
 
 ## Requirements
 
