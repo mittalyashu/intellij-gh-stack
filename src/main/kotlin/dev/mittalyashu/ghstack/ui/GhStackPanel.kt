@@ -25,6 +25,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.JBColor
+import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
@@ -38,6 +39,8 @@ import com.github.mittalyashu.ghstack.cli.GhResult
 import com.github.mittalyashu.ghstack.model.StackLayer
 import com.github.mittalyashu.ghstack.model.StackLoadResult
 import com.github.mittalyashu.ghstack.model.StackView
+import com.github.mittalyashu.ghstack.model.TrackedStack
+import com.github.mittalyashu.ghstack.model.TrackedStacks
 import com.github.mittalyashu.ghstack.service.GhStackService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
 import com.github.mittalyashu.ghstack.service.RebaseAction
@@ -55,6 +58,7 @@ import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.FlowLayout
 import java.awt.Point
+import java.nio.file.Path
 import javax.swing.DefaultListModel
 import javax.swing.JComponent
 import javax.swing.JList
@@ -87,10 +91,13 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         border = JBUI.Borders.empty(0, 4, 6, 12)
         isVisible = false
     }
+    private val allStacksPanel = AllStacksPanel { switchToStack(it) }
     private val refreshAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
     private var loading = false
     private var refreshQueued = false
     private var syncingRepository = false
+    private var runningTasks = 0
+    private var displayedRoot: Path? = null
     private lateinit var actionToolbar: ActionToolbar
     private val copyBranchNameAction = object : TooltipAction(
         GhStackBundle.message("panel.copy.branch"),
@@ -113,8 +120,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             add(actionToolbar.component, BorderLayout.NORTH)
             add(repositoryRow, BorderLayout.SOUTH)
         }, BorderLayout.NORTH)
-        add(JBScrollPane(list), BorderLayout.CENTER)
-        add(status, BorderLayout.SOUTH)
+        add(OnePixelSplitter(false, "ghstack.panel.splitter", 0.35f).apply {
+            firstComponent = allStacksPanel.component()
+            secondComponent = createCurrentStackColumn()
+        }, BorderLayout.CENTER)
 
         list.addMouseListener(object : PopupHandler() {
             override fun invokePopup(comp: Component, x: Int, y: Int) {
@@ -151,6 +160,15 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     fun component(): JComponent = this
 
+    /** The current stack column: the stack list with its status summary below it. */
+    private fun createCurrentStackColumn(): JComponent = JPanel(BorderLayout()).apply {
+        add(JBLabel(GhStackBundle.message("panel.current.stack.title")).apply {
+            border = JBUI.Borders.empty(4, 8)
+        }, BorderLayout.NORTH)
+        add(JBScrollPane(list), BorderLayout.CENTER)
+        add(status, BorderLayout.SOUTH)
+    }
+
     fun scheduleRefresh() {
         refreshAlarm.cancelAllRequests()
         refreshAlarm.addRequest({ refresh() }, 250)
@@ -164,12 +182,15 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun refresh() {
         if (Disposer.isDisposed(this)) return
         syncRepositorySelector()
+        val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
+        // The rows belong to the repository that produced them; blank them as soon as the selector points elsewhere
+        // so a stale row can't be checked out in the newly selected repository.
+        if (displayedRoot != root) allStacksPanel.clear()
         if (loading) {
             refreshQueued = true
             return
         }
         loading = true
-        val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
         status.text = GhStackBundle.message("status.loading")
         ProgressManager.getInstance().run(object : Task.Backgroundable(
             project,
@@ -178,10 +199,15 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         ) {
             override fun run(indicator: ProgressIndicator) {
                 var result: StackLoadResult? = null
+                var tracked: Result<TrackedStacks>? = null
                 try {
+                    // Load the tracked catalog first: it is a local read and shouldn't wait on `gh stack view`.
+                    tracked = runCatching { service.loadTrackedStacks() }
+                        .getOrElse { Result.failure(it) }
                     result = service.loadCurrentStack()
                 } finally {
                     val loaded = result
+                    val trackedResult = tracked
                     ApplicationManager.getApplication().invokeLater({
                         loading = false
                         if (!Disposer.isDisposed(this@GhStackPanel)) {
@@ -190,14 +216,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                             // The in-flight result belongs to the repository captured above, so don't show it under
                             // another repository's selector; reload instead.
                             if (!selectionChanged) {
-                                if (loaded != null) {
-                                    render(loaded)
-                                } else {
-                                    // The load threw; don't leave the panel stuck on the loading placeholder.
-                                    val message = GhStackBundle.message("status.load.failed")
-                                    status.text = message
-                                    list.emptyText.text = message
-                                }
+                                render(loaded, trackedResult)
+                                displayedRoot = root
                             }
                             if (refreshQueued || selectionChanged) {
                                 refreshQueued = false
@@ -243,11 +263,19 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         refresh()
     }
 
-    private fun render(result: StackLoadResult) {
+    private fun render(result: StackLoadResult?, tracked: Result<TrackedStacks>?) {
         listModel.clear()
+        var view: StackView? = null
         when (result) {
+            null -> {
+                // The load threw; don't leave the panel stuck on the loading placeholder.
+                val message = GhStackBundle.message("status.load.failed")
+                status.text = message
+                list.emptyText.text = message
+            }
+
             is StackLoadResult.Loaded -> {
-                val view = result.view
+                view = result.view
                 listModel.addElement(StackRow.Trunk(view.trunk))
                 view.branches.forEach { listModel.addElement(StackRow.Layer(it)) }
                 status.text = stackSummary(view)
@@ -264,6 +292,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 list.emptyText.text = result.message
             }
         }
+        allStacksPanel.update(tracked, view)
         actionToolbar.updateActionsAsync()
     }
 
@@ -328,15 +357,6 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             AllIcons.General.Add,
         ) {
             override fun actionPerformed(e: AnActionEvent) = addBranch()
-            override fun getActionUpdateThread() = ActionUpdateThread.EDT
-        })
-        group.add(object : TooltipAction(
-            GhStackBundle.message("panel.all.stacks"),
-            GhStackBundle.message("panel.all.stacks.description"),
-            GhStackBundle.message("panel.all.stacks.command"),
-            AllIcons.Vcs.Branch,
-        ) {
-            override fun actionPerformed(e: AnActionEvent) = showAllStacks()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
         group.add(object : TooltipAction(
@@ -575,9 +595,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         }
     }
 
-    private fun showAllStacks() {
-        AllStacksDialog(project, service).showAndGet().also {
-            if (it) scheduleRefresh()
+    private fun switchToStack(stack: TrackedStack) {
+        runGh(GhStackBundle.message("progress.checkout")) {
+            service.checkout(stack.checkoutTarget())
         }
     }
 
@@ -587,7 +607,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         // Pin the repository for the whole task so switching to another repository mid-rebase cannot split the
         // stash, the gh command, and the stash restore across different repositories.
         val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
+        runningTasks++
         repositoryCombo.isEnabled = false
+        allStacksPanel.setBusy(true)
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
             override fun run(indicator: ProgressIndicator) {
                 try {
@@ -619,7 +641,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                     }, ModalityState.any())
                 } finally {
                     ApplicationManager.getApplication().invokeLater({
-                        repositoryCombo.isEnabled = true
+                        runningTasks--
+                        repositoryCombo.isEnabled = runningTasks == 0
+                        allStacksPanel.setBusy(runningTasks > 0)
                     }, ModalityState.any())
                 }
             }

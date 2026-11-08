@@ -29,7 +29,7 @@ The plugin talks to `gh` in the selected Git repository: the project's Git repos
 - Rebase from a specific layer upward by right-clicking it in the stack list
 - Optionally stash uncommitted changes and untracked files around a rebase and restore them on success (Settings | Tools | GH Stack: ask / always / never)
 - Prompt to enable `git rerere` before a stack is initialized or rebased, so repeated conflict resolutions are reused
-- Switch among locally tracked stacks (reads `<git-common-dir>/gh-stack`, then `gh stack checkout`)
+- Switch among locally tracked stacks from the **All stacks** column beside the current stack (reads `<git-common-dir>/gh-stack`, then `gh stack checkout`)
 - Switch the panel between the project repository and its Git submodules (or any other Git root in the project)
 
 The stack UI and the command log that records every `gh` invocation live in a dedicated **GH Stack** tool window (bottom stripe), as the **Stack** and **Console** tabs. The plugin no longer adds tabs to the Git / Version Control tool window.
