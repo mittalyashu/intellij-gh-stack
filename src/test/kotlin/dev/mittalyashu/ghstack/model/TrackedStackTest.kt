@@ -44,4 +44,22 @@ class TrackedStackTest {
         val stack = TrackedStack(trunk = "main", branches = emptyList())
         assertEquals("main", stack.checkoutTarget())
     }
+
+    @Test
+    fun stackIsDanglingWhenNoneOfItsBranchesExistLocally() {
+        val stack = TrackedStack(trunk = "main", branches = listOf("auth", "api"))
+        assertTrue(stack.isDangling(setOf("main", "other")))
+    }
+
+    @Test
+    fun stackIsNotDanglingWhenAnyBranchExistsLocally() {
+        val stack = TrackedStack(trunk = "main", branches = listOf("auth", "api"))
+        assertFalse(stack.isDangling(setOf("main", "api")))
+    }
+
+    @Test
+    fun stackWithoutBranchesIsNotDangling() {
+        val stack = TrackedStack(trunk = "main", branches = emptyList())
+        assertFalse(stack.isDangling(setOf("main")))
+    }
 }

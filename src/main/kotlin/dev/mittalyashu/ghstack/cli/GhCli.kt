@@ -49,6 +49,17 @@ class GhCli(
 
     fun extensionList(): GhResult = run("extension", "list")
 
+    /** Removes a stack from local tracking only. A stack number targets a specific stack; without one the active stack is used. */
+    fun unstackLocal(stackNumber: Int? = null): GhResult {
+        val args = buildList {
+            add("stack")
+            add("unstack")
+            stackNumber?.let { add(it.toString()) }
+            add("--local")
+        }
+        return run(*args.toTypedArray())
+    }
+
     private fun run(vararg args: String): GhResult = run(DEFAULT_TIMEOUT_MS, *args)
 
     private fun run(timeoutMs: Int, vararg args: String): GhResult {

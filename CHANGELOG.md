@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - List every tracked stack beside the current stack in the **Stack** panel, so switching stacks no longer needs the **All stacks** dialog
+- Prune a dangling local stack from the **All stacks** context menu when all of its branches are gone, so merged stacks stop lingering in local tracking
 
 ## [0.1.0]
 

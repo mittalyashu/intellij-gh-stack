@@ -40,7 +40,10 @@ import javax.swing.event.PopupMenuListener
  * stack highlighted. Double-click, Enter, or the header action switches to the selected stack; the checkout is
  * delegated to [onSwitch] because the panel owns the progress task and error reporting.
  */
-internal class AllStacksPanel(private val onSwitch: (TrackedStack) -> Unit) : JPanel(BorderLayout()) {
+internal class AllStacksPanel(
+    private val onSwitch: (TrackedStack) -> Unit,
+    private val onPrune: (TrackedStack) -> Unit,
+) : JPanel(BorderLayout()) {
     private val model = DefaultListModel<TrackedStack>()
     private val list = JBList(model).apply {
         selectionMode = ListSelectionModel.SINGLE_SELECTION
@@ -48,6 +51,7 @@ internal class AllStacksPanel(private val onSwitch: (TrackedStack) -> Unit) : JP
         emptyText.text = GhStackBundle.message("panel.all.stacks.loading")
     }
     private var currentStack: TrackedStack? = null
+    private var localBranches: Set<String> = emptySet()
     private var busy = false
 
     private val switchAction = object : TooltipAction(
@@ -65,6 +69,22 @@ internal class AllStacksPanel(private val onSwitch: (TrackedStack) -> Unit) : JP
     private val switchToolbar: ActionToolbar = ActionManager.getInstance()
         .createActionToolbar(ActionPlaces.TOOLBAR, DefaultActionGroup(switchAction), true)
         .apply { targetComponent = list }
+
+    private val pruneAction = object : TooltipAction(
+        GhStackBundle.message("panel.prune.stack"),
+        GhStackBundle.message("panel.prune.stack.description"),
+        GhStackBundle.message("panel.prune.stack.command"),
+        AllIcons.Actions.GC,
+    ) {
+        override fun actionPerformed(e: AnActionEvent) {
+            selectedDanglingStack()?.let(onPrune)
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = !busy
+        }
+    }
 
     init {
         add(JPanel(BorderLayout()).apply {
@@ -90,8 +110,15 @@ internal class AllStacksPanel(private val onSwitch: (TrackedStack) -> Unit) : JP
                 if (index < 0 || list.getCellBounds(index, index)?.contains(point) != true) return
                 // Right-clicking a row selects it first, like the native Git panel, so the popup acts on that row.
                 list.selectedIndex = index
-                val popup = ActionManager.getInstance()
-                    .createActionPopupMenu(ActionPlaces.POPUP, DefaultActionGroup(switchAction))
+                val group = DefaultActionGroup()
+                group.add(switchAction)
+                // Pruning only makes sense for a stack with no local branch left, so keep the item out of the menu
+                // entirely for every other stack.
+                if (selectedDanglingStack() != null) {
+                    group.addSeparator()
+                    group.add(pruneAction)
+                }
+                val popup = ActionManager.getInstance().createActionPopupMenu(ActionPlaces.POPUP, group)
                 popup.component.addPopupMenuListener(object : PopupMenuListener {
                     override fun popupMenuWillBecomeVisible(event: PopupMenuEvent) {
                         installActionTooltips(popup.component)
@@ -131,9 +158,11 @@ internal class AllStacksPanel(private val onSwitch: (TrackedStack) -> Unit) : JP
 
     /**
      * Replaces the list with [tracked]. [view] is the loaded current stack, used only to highlight which tracked
-     * stack is checked out; a failed or missing load leaves no stack highlighted.
+     * stack is checked out; a failed or missing load leaves no stack highlighted. [localBranches] decides which
+     * stacks are dangling and therefore prunable.
      */
-    fun update(tracked: Result<TrackedStacks>?, view: StackView?) {
+    fun update(tracked: Result<TrackedStacks>?, view: StackView?, localBranches: Set<String>) {
+        this.localBranches = localBranches
         val previous = list.selectedValue
         val stacks = tracked?.getOrNull()?.stacks.orEmpty()
         currentStack = currentTrackedStack(stacks, view)
@@ -161,6 +190,9 @@ internal class AllStacksPanel(private val onSwitch: (TrackedStack) -> Unit) : JP
         if (busy) return
         list.selectedValue?.let(onSwitch)
     }
+
+    private fun selectedDanglingStack(): TrackedStack? =
+        list.selectedValue?.takeIf { it.isDangling(localBranches) }
 
     private inner class TrackedStackRenderer : ColoredListCellRenderer<TrackedStack>() {
         override fun customizeCellRenderer(

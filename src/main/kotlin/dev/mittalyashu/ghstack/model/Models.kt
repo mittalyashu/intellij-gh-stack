@@ -39,6 +39,13 @@ data class TrackedStack(
     val top: String? get() = branches.lastOrNull()
     val isLocal: Boolean get() = (number ?: 0) <= 0
 
+    /**
+     * True when every branch this stack tracks has been deleted locally, leaving nothing to check out. Such a stack
+     * is dangling and can only be cleared from local tracking.
+     */
+    fun isDangling(localBranches: Set<String>): Boolean =
+        branches.isNotEmpty() && branches.none { it in localBranches }
+
     fun displayLabel(): String {
         val chain = branches.joinToString(" → ").ifEmpty { "(empty)" }
         val prefix = if (isLocal) "Local stack" else "Stack #$number"
