@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- List every tracked stack beside the current stack in the **Stack** panel, so switching stacks no longer needs the **All stacks** dialog
+
 ## [0.1.0]
 
 Initial release. A thin IntelliJ wrapper around the GitHub CLI
