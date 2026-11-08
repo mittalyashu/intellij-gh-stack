@@ -44,7 +44,7 @@
                 id="GH Stack"
                 factoryClass="com.github.mittalyashu.ghstack.ui.GhStackToolWindowFactory"
                 anchor="bottom"
-                icon="AllIcons.Vcs.Branch"
+                icon="/icons/ghStack.svg"
                 canCloseContents="false"/>
     </extensions>
 </idea-plugin>
