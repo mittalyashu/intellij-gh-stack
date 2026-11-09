@@ -205,11 +205,15 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 var tracked: Result<TrackedStacks>? = null
                 var localBranches: Set<String> = emptySet()
                 try {
-                    // Load the tracked catalog first: it is a local read and shouldn't wait on `gh stack view`.
-                    tracked = runCatching { service.loadTrackedStacks() }
-                        .getOrElse { Result.failure(it) }
-                    localBranches = service.localBranchNames()
-                    result = service.loadCurrentStack()
+                    // Pin the captured root so a repository switch mid-load cannot mix this result with another
+                    // repository's catalog or stack (the completion guard below only compares the final selection).
+                    service.withPinnedRepository(root) {
+                        // Load the tracked catalog first: it is a local read and shouldn't wait on `gh stack view`.
+                        tracked = runCatching { service.loadTrackedStacks() }
+                            .getOrElse { Result.failure(it) }
+                        localBranches = service.localBranchNames()
+                        result = service.loadCurrentStack()
+                    }
                 } finally {
                     val loaded = result
                     val trackedResult = tracked
