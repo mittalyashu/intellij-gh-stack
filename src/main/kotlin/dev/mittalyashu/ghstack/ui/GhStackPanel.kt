@@ -3,6 +3,8 @@ package com.github.mittalyashu.ghstack.ui
 import com.intellij.dvcs.repo.VcsRepositoryManager
 import com.intellij.dvcs.repo.VcsRepositoryMappingListener
 import com.intellij.icons.AllIcons
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionToolbar
@@ -46,6 +48,7 @@ import com.github.mittalyashu.ghstack.model.TrackedStacks
 import com.github.mittalyashu.ghstack.service.GhStackService
 import com.github.mittalyashu.ghstack.service.GitService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
+import com.github.mittalyashu.ghstack.service.RebaseStateListener
 import com.github.mittalyashu.ghstack.service.RepositoryChoice
 import com.github.mittalyashu.ghstack.service.RepositorySelectionListener
 import com.github.mittalyashu.ghstack.service.RerereAction
@@ -177,6 +180,14 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             object : FileEditorManagerListener {
                 override fun selectionChanged(event: FileEditorManagerEvent) = followEditorRepository()
                 override fun fileOpened(source: FileEditorManager, file: VirtualFile) = followEditorRepository()
+            },
+        )
+        project.messageBus.connect(this).subscribe(
+            GhStackService.REBASE_STATE_CHANGED,
+            RebaseStateListener {
+                ApplicationManager.getApplication().invokeLater({
+                    if (!disposed) rebaseToolbar.updateActionsAsync()
+                }, ModalityState.any())
             },
         )
 
@@ -411,7 +422,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
             override fun update(e: AnActionEvent) {
-                e.presentation.isEnabled = selectedLayer() != null
+                e.presentation.isEnabled = selectedLayer() != null && !ghstack.isRebaseRunning()
             }
         })
         group.addSeparator()
@@ -473,8 +484,29 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
      */
     private fun createRebaseToolbarActions(): DefaultActionGroup = DefaultActionGroup().apply {
         add(createRebaseGroup())
+        add(createRebaseCancelAction())
         add(createRebaseContinueAction())
         add(createRebaseAbortAction())
+    }
+
+    private fun createRebaseCancelAction() = object : TooltipAction(
+        GhStackBundle.message("panel.rebase.cancel"),
+        GhStackBundle.message("panel.rebase.cancel.description"),
+        GhStackBundle.message("panel.rebase.cancel.command"),
+        AllIcons.Actions.Suspend,
+    ) {
+        override fun actionPerformed(e: AnActionEvent) {
+            ghstack.cancelRebase()
+            // Disable this action immediately; the rebase clears it from the service once its cleanup is done.
+            rebaseToolbar.updateActionsAsync()
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        override fun update(e: AnActionEvent) {
+            val running = ghstack.isRebaseRunning()
+            e.presentation.isVisible = running
+            e.presentation.isEnabled = running && !ghstack.isRebaseCancelling()
+        }
     }
 
     private fun createRebaseContinueAction() = object : TooltipAction(
@@ -487,6 +519,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
         override fun update(e: AnActionEvent) {
             e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
+            e.presentation.isEnabled = !ghstack.isRebaseRunning()
         }
     }
 
@@ -500,6 +533,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
         override fun update(e: AnActionEvent) {
             e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
+            e.presentation.isEnabled = !ghstack.isRebaseRunning()
         }
     }
 
@@ -511,6 +545,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         ) {
             override fun actionPerformed(e: AnActionEvent) = rebase(*flags)
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = !ghstack.isRebaseRunning()
+            }
         }
 
         return TooltipActionGroup(
@@ -607,11 +644,20 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun rebaseFromHere(layer: StackLayer) = runRebase(listOf(layer.name, "--upstack"))
 
     private fun runRebase(args: List<String>) {
-        runTask(GhStackBundle.message("progress.rebase")) {
+        // A queued action can slip past the disabled toolbar; do not start a second rebase under the first one's signal.
+        if (ghstack.isRebaseRunning()) return
+        runTask(GhStackBundle.message("progress.rebase"), cancellable = true) { isCancelled ->
             val stash = stashBefore(StashPrompt.REBASE) ?: return@runTask null
+            // The prompts run in a non-cancelable section, so a cancellation is observed right after one closes.
+            if (isCancelled()) return@runTask null
             ensureRerere()
+            if (isCancelled()) return@runTask null
             val flags = args.toTypedArray()
-            if (stash) ghstack.rebaseWithStash(*flags) else RebaseOutcome(ghstack.rebase(*flags))
+            if (stash) {
+                ghstack.rebaseWithStashCancellable(isCancelled, *flags)
+            } else {
+                ghstack.rebaseCancellable(isCancelled, *flags)
+            }
         }
     }
 
@@ -663,22 +709,26 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
      */
     private fun askToEnableRerere(): Boolean? {
         var answer: Boolean? = null
-        ApplicationManager.getApplication().invokeAndWait({
-            val choice = MessageDialogBuilder
-                .yesNoCancel(
-                    GhStackBundle.message("dialog.rerere.title"),
-                    GhStackBundle.message("dialog.rerere.message"),
-                )
-                .yesText(GhStackBundle.message("dialog.rerere.yes"))
-                .noText(GhStackBundle.message("dialog.rerere.no"))
-                .cancelText(GhStackBundle.message("dialog.rerere.cancel"))
-                .show(project)
-            answer = when (choice) {
-                Messages.YES -> true
-                Messages.NO -> false
-                else -> null
-            }
-        }, ModalityState.defaultModalityState())
+        // The dialog may stay open while the progress is cancelled; let the answer land, then the caller's
+        // isCancelled() check abandons the rebase instead of throwing out of invokeAndWait.
+        ProgressManager.getInstance().executeNonCancelableSection {
+            ApplicationManager.getApplication().invokeAndWait({
+                val choice = MessageDialogBuilder
+                    .yesNoCancel(
+                        GhStackBundle.message("dialog.rerere.title"),
+                        GhStackBundle.message("dialog.rerere.message"),
+                    )
+                    .yesText(GhStackBundle.message("dialog.rerere.yes"))
+                    .noText(GhStackBundle.message("dialog.rerere.no"))
+                    .cancelText(GhStackBundle.message("dialog.rerere.cancel"))
+                    .show(project)
+                answer = when (choice) {
+                    Messages.YES -> true
+                    Messages.NO -> false
+                    else -> null
+                }
+            }, ModalityState.defaultModalityState())
+        }
         return answer
     }
 
@@ -688,30 +738,33 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
      */
     private fun askToStash(settings: GhStackSettings, prompt: StashPrompt): Boolean? {
         var answer: Boolean? = null
-        ApplicationManager.getApplication().invokeAndWait({
-            var remember = false
-            val choice = MessageDialogBuilder
-                .yesNoCancel(
-                    GhStackBundle.message("dialog.stash.title"),
-                    GhStackBundle.message(prompt.messageKey),
-                )
-                .yesText(GhStackBundle.message(prompt.yesKey))
-                .noText(GhStackBundle.message("dialog.stash.no"))
-                .cancelText(GhStackBundle.message("dialog.stash.cancel"))
-                .doNotAsk(object : DoNotAskOption.Adapter() {
-                    override fun rememberChoice(isSelected: Boolean, exitCode: Int) {
-                        remember = isSelected
-                    }
+        // See askToEnableRerere: the caller checks isCancelled() once the dialog closes.
+        ProgressManager.getInstance().executeNonCancelableSection {
+            ApplicationManager.getApplication().invokeAndWait({
+                var remember = false
+                val choice = MessageDialogBuilder
+                    .yesNoCancel(
+                        GhStackBundle.message("dialog.stash.title"),
+                        GhStackBundle.message(prompt.messageKey),
+                    )
+                    .yesText(GhStackBundle.message(prompt.yesKey))
+                    .noText(GhStackBundle.message("dialog.stash.no"))
+                    .cancelText(GhStackBundle.message("dialog.stash.cancel"))
+                    .doNotAsk(object : DoNotAskOption.Adapter() {
+                        override fun rememberChoice(isSelected: Boolean, exitCode: Int) {
+                            remember = isSelected
+                        }
 
-                    override fun getDoNotShowMessage() = GhStackBundle.message("dialog.stash.remember")
-                })
-                .show(project)
-            answer = stashChoiceFromExitCode(choice)
-            // A Cancel press still reports the "remember" checkbox, but cancelling must not persist a stash mode.
-            if (answer != null && remember) {
-                settings.stashMode = if (answer == true) StashMode.ALWAYS else StashMode.NEVER
-            }
-        }, ModalityState.defaultModalityState())
+                        override fun getDoNotShowMessage() = GhStackBundle.message("dialog.stash.remember")
+                    })
+                    .show(project)
+                answer = stashChoiceFromExitCode(choice)
+                // A Cancel press still reports the "remember" checkbox, but cancelling must not persist a stash mode.
+                if (answer != null && remember) {
+                    settings.stashMode = if (answer == true) StashMode.ALWAYS else StashMode.NEVER
+                }
+            }, ModalityState.defaultModalityState())
+        }
         return answer
     }
 
@@ -755,7 +808,11 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun runGh(title: String, command: () -> GhResult) = runTask(title) { RebaseOutcome(command()) }
 
-    private fun runTask(title: String, command: () -> RebaseOutcome?) {
+    private fun runTask(
+        title: String,
+        cancellable: Boolean = false,
+        command: (isCancelled: () -> Boolean) -> RebaseOutcome?,
+    ) {
         // Auto mode targets whatever the editor shows right now, even if no refresh ran since the last tab switch.
         ghstack.syncAutoRepository()
         // Pin the repository for the whole task so switching to another repository mid-rebase cannot split the
@@ -764,32 +821,18 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         runningTasks++
         repositoryCombo.isEnabled = false
         allStacksPanel.setBusy(true)
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, cancellable) {
             override fun run(indicator: ProgressIndicator) {
                 try {
-                    val outcome = ghstack.withPinnedRepository(root) {
-                        val outcome = command()
-                        outcome?.stashToRestore?.let { stash ->
-                            val repository = ghstack.selectedRepository()
-                            if (repository == null || !git.restoreStash(repository, stash)) {
-                                ApplicationManager.getApplication().invokeLater({
-                                    Messages.showErrorDialog(
-                                        project,
-                                        GhStackBundle.message("stash.restore.missing", stash.message),
-                                        GhStackBundle.message("notification.error"),
-                                    )
-                                }, ModalityState.any())
-                            }
-                        }
-                        ghstack.selectedRepository()?.let(git::refresh)
-                        outcome
-                    }
+                    val outcome = executeTask(root, cancellable, indicator, command)
                     ApplicationManager.getApplication().invokeLater({
-                        if (outcome != null && !outcome.result.succeeded) {
-                            Messages.showErrorDialog(
+                        when {
+                            outcome == null -> Unit
+                            outcome.result.cancelled -> reportCancelled(outcome)
+                            !outcome.result.succeeded -> Messages.showErrorDialog(
                                 project,
                                 outcome.result.errorText(),
-                                GhStackBundle.message("notification.error")
+                                GhStackBundle.message("notification.error"),
                             )
                         }
                         refresh()
@@ -797,12 +840,77 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 } finally {
                     ApplicationManager.getApplication().invokeLater({
                         runningTasks--
-                        repositoryCombo.isEnabled = runningTasks == 0
-                        allStacksPanel.setBusy(runningTasks > 0)
+                        if (!disposed) {
+                            repositoryCombo.isEnabled = runningTasks == 0
+                            allStacksPanel.setBusy(runningTasks > 0)
+                            rebaseToolbar.updateActionsAsync()
+                        }
                     }, ModalityState.any())
                 }
             }
         })
+    }
+
+    /**
+     * Runs [command] with the repository pinned and the stash restored. Returns null when another panel already
+     * started a rebase, so this one neither runs nor reports anything.
+     */
+    private fun executeTask(
+        root: Path?,
+        cancellable: Boolean,
+        indicator: ProgressIndicator,
+        command: (isCancelled: () -> Boolean) -> RebaseOutcome?,
+    ): RebaseOutcome? {
+        val isCancelled: () -> Boolean = if (cancellable) {
+            ghstack.startRebase(indicator) ?: return null
+        } else {
+            { false }
+        }
+        try {
+            return ghstack.withPinnedRepository(root) {
+                val outcome = command(isCancelled)
+                outcome?.stashToRestore?.let { stash ->
+                    val repository = ghstack.selectedRepository()
+                    if (repository == null || !git.restoreStash(repository, stash)) {
+                        ApplicationManager.getApplication().invokeLater({
+                            Messages.showErrorDialog(
+                                project,
+                                GhStackBundle.message("stash.restore.missing", stash.message),
+                                GhStackBundle.message("notification.error"),
+                            )
+                        }, ModalityState.any())
+                    }
+                }
+                ghstack.selectedRepository()?.let(git::refresh)
+                outcome
+            }
+        } finally {
+            if (cancellable) ghstack.finishRebase()
+        }
+    }
+
+    /**
+     * A cancelled rebase is not an error: the service has already aborted the branches it changed and returned the
+     * stash. Only a failed cleanup needs a dialog, because the working tree or the stash still needs attention.
+     */
+    private fun reportCancelled(outcome: RebaseOutcome) {
+        if (outcome.cleanupFailed || outcome.stashKept != null) {
+            Messages.showErrorDialog(
+                project,
+                outcome.result.errorText(),
+                GhStackBundle.message("notification.error"),
+            )
+            return
+        }
+        val message = if (outcome.rolledBack) {
+            GhStackBundle.message("status.rebase.cancelled.restored")
+        } else {
+            GhStackBundle.message("status.rebase.cancelled")
+        }
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup(GH_STACK_NOTIFICATION_GROUP)
+            .createNotification(message, NotificationType.INFORMATION)
+            .notify(project)
     }
 
     override fun dispose() {
@@ -821,6 +929,8 @@ private sealed interface RepositoryOption {
     data object Auto : RepositoryOption
     data class Fixed(val choice: RepositoryChoice) : RepositoryOption
 }
+
+private const val GH_STACK_NOTIFICATION_GROUP = "GH Stack"
 
 private class RepositoryRenderer : ColoredListCellRenderer<RepositoryOption>() {
     override fun customizeCellRenderer(
