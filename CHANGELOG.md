@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - List every tracked stack beside the current stack in the **Stack** panel, so switching stacks no longer needs the **All stacks** dialog
 - Prune a dangling local stack from the **All stacks** context menu when all of its branches are gone, so merged stacks stop lingering in local tracking
 
+### Changed
+
+- Move the **Rebase stack** action from the panel toolbar into the **Current stack** header, next to its title, keeping its rebase variants in one dropdown
+
 ### Fixed
 
 - Stop using the deprecated `Disposer.isDisposed` API in the **Stack** and **Console** panels
