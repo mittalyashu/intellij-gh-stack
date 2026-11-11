@@ -22,7 +22,7 @@ I review and test what goes in, and the plugin is used daily for real work, but 
 
 The plugin talks to `gh` in the selected Git repository: the project's Git repository by default, or a Git submodule chosen in the panel. It does not reimplement stacked PRs.
 
-- Visual view of the current stack (`gh stack view --json`)
+- Visual view of the current stack as a commit graph (`gh stack view --json`)
 - Add a branch on top of the stack (`gh stack add`)
 - Check out a layer (`gh stack checkout <branch>`)
 - Rebase the stack (`gh stack rebase`, with `--upstack`, `--downstack`, `--no-trunk`), plus continue / abort
