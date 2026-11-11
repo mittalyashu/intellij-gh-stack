@@ -126,7 +126,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             .createActionToolbar(ActionPlaces.TOOLBAR, createActions(), true)
         actionToolbar.targetComponent = this
         rebaseToolbar = ActionManager.getInstance()
-            .createActionToolbar(ActionPlaces.TOOLBAR, createRebaseGroup(), true)
+            .createActionToolbar(ActionPlaces.TOOLBAR, createRebaseToolbarActions(), true)
             .apply { targetComponent = this@GhStackPanel }
 
         add(JPanel(BorderLayout()).apply {
@@ -416,6 +416,14 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             }
         })
         return group
+    }
+
+    /**
+     * The rebase group wrapped in a parent group. A toolbar flattens its root group into separate buttons, so the
+     * wrapper is what keeps the rebase variants behind a single dropdown button.
+     */
+    private fun createRebaseToolbarActions(): DefaultActionGroup = DefaultActionGroup().apply {
+        add(createRebaseGroup())
     }
 
     private fun createRebaseGroup(): DefaultActionGroup {

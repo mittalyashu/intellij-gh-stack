@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Move the **Rebase stack** action from the panel toolbar into the **Current stack** header, next to its title
+- Move the **Rebase stack** action from the panel toolbar into the **Current stack** header, next to its title, keeping its rebase variants in one dropdown
 
 ### Fixed
 
