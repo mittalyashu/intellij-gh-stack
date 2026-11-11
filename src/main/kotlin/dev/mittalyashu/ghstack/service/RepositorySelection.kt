@@ -44,12 +44,38 @@ internal fun buildRepositoryChoices(
 
 /**
  * The entry to show for [selected]: that root when it is still present, otherwise the preferred (first) entry.
- * A null [selected] means the selector follows the project's own repository.
+ * A null [selected] means no repository was picked explicitly.
  */
 internal fun chooseRepository(choices: List<RepositoryChoice>, selected: Path?): RepositoryChoice? {
     val root = selected?.normalize()
     return choices.firstOrNull { it.root == root } ?: choices.firstOrNull()
 }
+
+/**
+ * The root auto mode follows for [file]: the deepest repository that contains it, so a file in a submodule
+ * resolves to the submodule rather than its superproject. A file outside every repository (or no file at all,
+ * e.g. when no editor is open) keeps [previous], so opening a scratch file does not move the panel.
+ */
+internal fun resolveAutoRepository(
+    choices: List<RepositoryChoice>,
+    file: Path?,
+    previous: Path?,
+): Path? {
+    val path = file?.normalize() ?: return previous
+    return choices
+        .filter { path.startsWith(it.root) }
+        .maxByOrNull { it.root.nameCount }
+        ?.root
+        ?: previous
+}
+
+/**
+ * The root a service call runs against: the root pinned by a running task wins over the user's explicit choice,
+ * which wins over auto mode's editor-derived root. Null means no preference, so [chooseRepository] picks the
+ * preferred entry.
+ */
+internal fun effectiveRepositoryRoot(pinned: Path?, selected: Path?, auto: Path?): Path? =
+    pinned ?: selected ?: auto
 
 private fun repositoryRank(root: Path, base: Path?): Int = when {
     base == null -> 0

@@ -20,7 +20,7 @@ I review and test what goes in, and the plugin is used daily for real work, but 
 
 ## What it does
 
-The plugin talks to `gh` in the selected Git repository: the project's Git repository by default, or a Git submodule chosen in the panel. It does not reimplement stacked PRs.
+The plugin talks to `gh` in the selected Git repository: the repository of the file open in the editor by default, or a Git root picked in the panel. It does not reimplement stacked PRs.
 
 - Visual view of the current stack as a commit graph (`gh stack view --json`)
 - Add a branch on top of the stack (`gh stack add`)
@@ -31,7 +31,7 @@ The plugin talks to `gh` in the selected Git repository: the project's Git repos
 - Prompt to enable `git rerere` before a stack is initialized or rebased, so repeated conflict resolutions are reused
 - Switch among locally tracked stacks from the **All stacks** column beside the current stack (reads `<git-common-dir>/gh-stack`, then `gh stack checkout`)
 - Prune a dangling local stack from the **All stacks** context menu when all of its branches are gone, so merged stacks stop lingering in local tracking
-- Switch the panel between the project repository and its Git submodules (or any other Git root in the project)
+- Follow the repository of the file selected in the editor, or pin the panel to the project repository, a Git submodule, or any other Git root in the project
 
 The stack UI and the command log that records every `gh` invocation live in a dedicated **GH Stack** tool window (bottom stripe), as the **Stack** and **Console** tabs. The plugin no longer adds tabs to the Git / Version Control tool window.
 

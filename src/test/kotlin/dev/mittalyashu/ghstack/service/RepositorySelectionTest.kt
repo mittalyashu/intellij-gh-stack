@@ -98,4 +98,84 @@ class RepositorySelectionTest {
 
         assertNull(chooseRepository(choices, base))
     }
+
+    @Test
+    fun `auto mode picks the repository containing the selected file`() {
+        val choices = buildRepositoryChoices(
+            repositories = setOf(base, base.resolve("libs/alpha")),
+            projectBaseDir = base,
+            submoduleRoots = setOf(base.resolve("libs/alpha")),
+        )
+
+        assertEquals(base, resolveAutoRepository(choices, base.resolve("src/Main.kt"), null))
+        assertEquals(
+            base.resolve("libs/alpha"),
+            resolveAutoRepository(choices, base.resolve("libs/alpha/src/Lib.kt"), null),
+        )
+    }
+
+    @Test
+    fun `auto mode picks the deepest repository for a nested file`() {
+        val choices = buildRepositoryChoices(
+            repositories = setOf(base, base.resolve("libs/alpha"), base.resolve("libs/alpha/vendor/beta")),
+            projectBaseDir = base,
+            submoduleRoots = emptySet(),
+        )
+
+        assertEquals(
+            base.resolve("libs/alpha/vendor/beta"),
+            resolveAutoRepository(choices, base.resolve("libs/alpha/vendor/beta/src/Beta.kt"), null),
+        )
+    }
+
+    @Test
+    fun `auto mode keeps the previous repository for a file outside every repository`() {
+        val choices = buildRepositoryChoices(
+            repositories = setOf(base, base.resolve("libs/alpha")),
+            projectBaseDir = base,
+            submoduleRoots = setOf(base.resolve("libs/alpha")),
+        )
+
+        assertEquals(
+            base.resolve("libs/alpha"),
+            resolveAutoRepository(choices, Path.of("/elsewhere/Scratch.kt"), base.resolve("libs/alpha")),
+        )
+    }
+
+    @Test
+    fun `auto mode keeps the previous repository when no editor is open`() {
+        val choices = buildRepositoryChoices(
+            repositories = setOf(base, base.resolve("libs/alpha")),
+            projectBaseDir = base,
+            submoduleRoots = emptySet(),
+        )
+
+        assertEquals(base.resolve("libs/alpha"), resolveAutoRepository(choices, null, base.resolve("libs/alpha")))
+        assertNull(resolveAutoRepository(choices, null, null))
+    }
+
+    @Test
+    fun `auto mode has no repository without choices`() {
+        assertNull(resolveAutoRepository(emptyList(), base.resolve("src/Main.kt"), null))
+    }
+
+    @Test
+    fun `a running task's pinned repository wins over every panel selection`() {
+        val pinned = Path.of("/work/pinned")
+        val selected = Path.of("/work/selected")
+        val auto = Path.of("/work/auto")
+
+        assertEquals(pinned, effectiveRepositoryRoot(pinned, selected, auto))
+        assertEquals(pinned, effectiveRepositoryRoot(pinned, null, auto))
+    }
+
+    @Test
+    fun `explicit selection wins over the repository followed from the editor`() {
+        val selected = Path.of("/work/selected")
+        val auto = Path.of("/work/auto")
+
+        assertEquals(selected, effectiveRepositoryRoot(null, selected, auto))
+        assertEquals(auto, effectiveRepositoryRoot(null, null, auto))
+        assertNull(effectiveRepositoryRoot(null, null, null))
+    }
 }

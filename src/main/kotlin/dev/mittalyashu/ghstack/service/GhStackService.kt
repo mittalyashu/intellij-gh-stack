@@ -1,7 +1,10 @@
 package com.github.mittalyashu.ghstack.service
 
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.util.concurrency.annotations.RequiresEdt
 import com.intellij.util.messages.Topic
 import com.github.mittalyashu.ghstack.GhStackBundle
 import com.github.mittalyashu.ghstack.cli.GhCli
@@ -39,11 +42,18 @@ class GhStackService(private val project: Project) {
     }
 
     /**
-     * The repository explicitly picked in the panel, or null while the selector follows the project's own
-     * repository. Volatile because panel actions read it from background threads.
+     * The repository explicitly picked in the panel, or null while the selector follows the file selected in the
+     * editor. Volatile because panel actions read it from background threads.
      */
     @Volatile
     private var selectedRoot: Path? = null
+
+    /**
+     * The repository auto mode follows, resolved from the file selected in the editor. Kept apart from
+     * [selectedRoot] so an explicit choice always wins; null until the editor context resolves to a repository.
+     */
+    @Volatile
+    private var autoRoot: Path? = null
 
     /**
      * The root pinned for a task running on the current thread. A task snapshots the selection when it starts and
@@ -52,19 +62,38 @@ class GhStackService(private val project: Project) {
      */
     private val pinnedRoot = ThreadLocal<Path?>()
 
-    private fun effectiveRoot(): Path? = pinnedRoot.get() ?: selectedRoot
+    private fun effectiveRoot(): Path? = effectiveRepositoryRoot(pinnedRoot.get(), selectedRoot, autoRoot)
 
     fun gitRoot(): Path? = selectedRepository()?.root?.toNioPath()
 
     /** Git repositories in the project, ordered for the panel's selector (the project's own repository first). */
     fun repositoryChoices(): List<RepositoryChoice> = buildChoices(gitRepositories())
 
-    /** The explicitly selected root, or null while the selector follows the project's own repository. */
+    /** The explicitly selected root, or null while the selector follows the file selected in the editor. */
     fun selectedRepositoryRoot(): Path? = selectedRoot
 
+    /** Whether no repository is pinned and the panel follows the file selected in the editor. */
+    fun isAutoRepository(): Boolean = selectedRoot == null
+
     /**
-     * The repository the panel's actions run against: the selected one while it still exists, otherwise the
-     * project's own repository, falling back to the first Git root when the project itself is not a repository.
+     * Re-resolves the repository auto mode follows from the file selected in the editor, preferring the deepest
+     * enclosing repository. A file outside every registered repository keeps the previous selection. No-op while
+     * the user pinned a repository.
+     */
+    @RequiresEdt
+    fun syncAutoRepository() {
+        if (selectedRoot != null) return
+        val file = FileEditorManager.getInstance(project).selectedFiles
+            .firstOrNull()
+            ?.takeIf { it.isInLocalFileSystem }
+            ?.let { VfsUtilCore.virtualToIoFile(it).toPath() }
+        autoRoot = resolveAutoRepository(repositoryChoices(), file, autoRoot)
+    }
+
+    /**
+     * The repository the panel's actions run against: the pinned one while it still exists, otherwise the one
+     * auto mode follows from the editor, falling back to the project's own repository (and to the first Git root
+     * when the project itself is not a repository).
      */
     fun selectedRepository(): GitRepository? {
         val repositories = gitRepositories()
@@ -73,9 +102,15 @@ class GhStackService(private val project: Project) {
         return repositories.firstOrNull { it.root.toNioPath().normalize() == choice.root }
     }
 
-    /** Selects [root] for every panel action and notifies the other open panels. Call from the EDT. */
-    fun selectRepository(root: Path) {
-        selectedRoot = root.normalize()
+    /**
+     * Selects [root] for every panel action, or null to follow the file selected in the editor, and notifies the
+     * other open panels.
+     */
+    @RequiresEdt
+    fun selectRepository(root: Path?) {
+        selectedRoot = root?.normalize()
+        // Re-resolve the editor context on the next sync instead of reusing a root from before the pin.
+        if (root == null) autoRoot = null
         project.messageBus.syncPublisher(REPOSITORY_SELECTED).repositorySelected()
     }
 
