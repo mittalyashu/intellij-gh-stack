@@ -26,13 +26,13 @@ jobs:
       issues: write
 
     # Conditional execution based on event type
+    # Issues: run when opened (always) or commented (if contains @junie-agent)
+    # PR review comments: run if contains @junie-agent
+    # PR reviews: run if review body contains @junie-agent
     if: |
-      # Issues: run when opened (always) or commented (if contains @junie-agent)
       (github.event_name == 'issues') ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@junie-agent')) ||
-      # PR review comments: run if contains @junie-agent
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@junie-agent')) ||
-      # PR reviews: run if review body contains @junie-agent
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@junie-agent'))
 
     steps:
