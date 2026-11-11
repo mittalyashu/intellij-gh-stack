@@ -299,8 +299,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
             is StackLoadResult.Loaded -> {
                 view = result.view
-                listModel.addElement(StackRow.Trunk(view.trunk))
-                view.branches.forEach { listModel.addElement(StackRow.Layer(it)) }
+                stackRows(view).forEach(listModel::addElement)
                 status.text = stackSummary(view)
                 list.emptyText.text = ""
             }
