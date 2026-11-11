@@ -29,6 +29,10 @@ class GhStackConsolePanel(private val project: Project) : JPanel(BorderLayout())
         TextConsoleBuilderFactory.getInstance().createBuilder(project).console
     private var lastSequence = 0L
 
+    /** Set in [dispose]; guards entries that were queued before the console was released. */
+    @Volatile
+    private var disposed = false
+
     init {
         Disposer.register(this, console)
         add(createToolbar().component, BorderLayout.NORTH)
@@ -50,7 +54,9 @@ class GhStackConsolePanel(private val project: Project) : JPanel(BorderLayout())
 
     fun component(): JComponent = this
 
-    override fun dispose() {}
+    override fun dispose() {
+        disposed = true
+    }
 
     private fun createToolbar(): ActionToolbar {
         val toolbar = ActionManager.getInstance().createActionToolbar(
@@ -73,7 +79,7 @@ class GhStackConsolePanel(private val project: Project) : JPanel(BorderLayout())
     }
 
     private fun append(entry: GhCommandLogEntry) {
-        if (Disposer.isDisposed(this) || entry.sequence <= lastSequence) return
+        if (!shouldAppendLogEntry(disposed, entry, lastSequence)) return
         lastSequence = entry.sequence
         formatGhCommandLog(entry, GhStackSettings.getInstance().consoleVerbosity).forEach { line ->
             printLine(line.text, line.kind.contentType())
@@ -85,6 +91,13 @@ class GhStackConsolePanel(private val project: Project) : JPanel(BorderLayout())
         console.print("\n", contentType)
     }
 }
+
+/**
+ * Returns whether [entry] should be printed. Entries can arrive after the panel was disposed (their queued
+ * `invokeLater` outlives the console), and history replay can deliver entries the console already shows.
+ */
+internal fun shouldAppendLogEntry(disposed: Boolean, entry: GhCommandLogEntry, lastSequence: Long): Boolean =
+    !disposed && entry.sequence > lastSequence
 
 private fun GhLogKind.contentType(): ConsoleViewContentType = when (this) {
     GhLogKind.COMMAND -> ConsoleViewContentType.USER_INPUT

@@ -22,7 +22,6 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DoNotAskOption
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.util.Disposer
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
@@ -103,6 +102,11 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private var syncingRepository = false
     private var runningTasks = 0
     private var displayedRoot: Path? = null
+
+    /** Set in [dispose]; guards callbacks that were queued before the panel was disposed. */
+    @Volatile
+    private var disposed = false
+
     private lateinit var actionToolbar: ActionToolbar
     private val copyBranchNameAction = object : TooltipAction(
         GhStackBundle.message("panel.copy.branch"),
@@ -185,7 +189,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
      * quick repository switch is never dropped.
      */
     private fun refresh() {
-        if (Disposer.isDisposed(this)) return
+        if (disposed) return
         syncRepositorySelector()
         val root = ghstack.selectedRepository()?.root?.toNioPath()?.normalize()
         // The rows belong to the repository that produced them; blank them as soon as the selector points elsewhere
@@ -222,7 +226,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                     val branches = localBranches
                     ApplicationManager.getApplication().invokeLater({
                         loading = false
-                        if (!Disposer.isDisposed(this@GhStackPanel)) {
+                        if (!disposed) {
                             val selectionChanged =
                                 ghstack.selectedRepository()?.root?.toNioPath()?.normalize() != root
                             // The in-flight result belongs to the repository captured above, so don't show it under
@@ -678,7 +682,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         })
     }
 
-    override fun dispose() {}
+    override fun dispose() {
+        disposed = true
+    }
 }
 
 private class RepositoryRenderer : ColoredListCellRenderer<RepositoryChoice>() {
