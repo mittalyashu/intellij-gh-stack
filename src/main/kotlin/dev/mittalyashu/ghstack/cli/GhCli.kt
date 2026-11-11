@@ -34,7 +34,11 @@ class GhCli(
 
     fun checkout(target: String): GhResult = run(MUTATION_TIMEOUT_MS, "stack", "checkout", target)
 
-    fun init(branchName: String): GhResult = run(MUTATION_TIMEOUT_MS, "stack", "init", branchName)
+    fun init(branchName: String): GhResult = init(listOf(branchName))
+
+    /** Initializes a stack from [branches] (bottom to top), optionally on [base] instead of the default trunk. */
+    fun init(branches: List<String>, base: String? = null): GhResult =
+        run(MUTATION_TIMEOUT_MS, *initStackArgs(branches, base).toTypedArray())
 
     fun rebase(vararg flags: String): GhResult {
         val timeoutMs = if (flags.contains("--abort")) DEFAULT_TIMEOUT_MS else REBASE_TIMEOUT_MS
@@ -134,6 +138,17 @@ class GhCli(
         private const val MUTATION_TIMEOUT_MS = 5 * 60_000
         private const val REBASE_TIMEOUT_MS = 10 * 60_000
     }
+}
+
+/** The `gh` arguments that initialize a stack from [branches] (bottom to top) on [base]. */
+internal fun initStackArgs(branches: List<String>, base: String?): List<String> = buildList {
+    add("stack")
+    add("init")
+    base?.takeIf { it.isNotBlank() }?.let {
+        add("--base")
+        add(it)
+    }
+    addAll(branches)
 }
 
 /**

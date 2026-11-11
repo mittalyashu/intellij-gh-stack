@@ -105,6 +105,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private var syncingRepository = false
     private var runningTasks = 0
     private var displayedRoot: Path? = null
+    private var currentView: StackView? = null
+    private var localBranchNames: Set<String> = emptySet()
 
     /** Set in [dispose]; guards callbacks that were queued before the panel was disposed. */
     @Volatile
@@ -218,6 +220,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     /** Drops rows that belong to a repository the panel no longer targets, so they can't act on the new one. */
     private fun invalidateRows() {
         displayedRoot = null
+        currentView = null
+        localBranchNames = emptySet()
         listModel.clear()
         status.text = GhStackBundle.message("status.loading")
         list.emptyText.text = GhStackBundle.message("status.loading")
@@ -338,6 +342,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun render(result: StackLoadResult?, tracked: Result<TrackedStacks>?, localBranches: Set<String>) {
         listModel.clear()
+        localBranchNames = localBranches
         var view: StackView? = null
         when (result) {
             null -> {
@@ -364,6 +369,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 list.emptyText.text = result.message
             }
         }
+        currentView = view
         allStacksPanel.update(tracked, view, localBranches)
         actionToolbar.updateActionsAsync()
     }
@@ -408,6 +414,21 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         })
         group.addSeparator()
         group.add(copyBranchNameAction)
+        group.addSeparator()
+        val layer = selectedLayer()
+        group.add(object : TooltipAction(
+            GhStackBundle.message("panel.rename.branch"),
+            renameBranchDescription(layer),
+            icon = AllIcons.Actions.Edit,
+        ) {
+            override fun actionPerformed(e: AnActionEvent) = renameSelectedBranch()
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                // Renaming a branch with a pull request closes that pull request on GitHub, so the menu item is
+                // disabled and its description explains the consequence instead.
+                e.presentation.isEnabled = layer != null && layer.pr == null
+            }
+        })
         return group
     }
 
@@ -530,6 +551,23 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         val target = checkoutTargetFor(selectedLayer()) ?: return
         runGh(GhStackBundle.message("progress.checkout")) {
             ghstack.checkout(target)
+        }
+    }
+
+    private fun renameSelectedBranch() {
+        val layer = selectedLayer() ?: return
+        if (layer.pr != null) return
+        val view = currentView ?: return
+        val branches = view.branches.map { it.name }
+        val newName = RenameBranchDialog(
+            project = project,
+            oldName = layer.name,
+            trunk = view.trunk,
+            branches = branches,
+            existingBranches = localBranchNames,
+        ).showAndGetBranchName() ?: return
+        runGh(GhStackBundle.message("progress.rename")) {
+            ghstack.renameLayerBranch(layer.name, newName, view.trunk, branches)
         }
     }
 

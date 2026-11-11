@@ -182,15 +182,15 @@ class GhStackService(private val project: Project) {
 
     private fun pruneUnnumberedStack(stack: TrackedStack): GhResult {
         val repository = selectedRepository()
-            ?: return pruneFailure(GhStackBundle.message("prune.error.no.repository"))
+            ?: return failure(GhStackBundle.message("prune.error.no.repository"))
         val temporaryBranch = stack.branches.firstOrNull { it.isNotBlank() }
-            ?: return pruneFailure(GhStackBundle.message("prune.error.no.branch"))
+            ?: return failure(GhStackBundle.message("prune.error.no.branch"))
         val originalBranch = git.currentBranchName(repository)
-            ?: return pruneFailure(GhStackBundle.message("prune.error.detached"))
+            ?: return failure(GhStackBundle.message("prune.error.detached"))
 
         // Point the temporary branch at HEAD so switching to it is safe even with uncommitted changes.
         if (!git.createBranch(repository, temporaryBranch)) {
-            return pruneFailure(GhStackBundle.message("prune.error.create.branch", temporaryBranch))
+            return failure(GhStackBundle.message("prune.error.create.branch", temporaryBranch))
         }
         var result: GhResult? = null
         var cleanupError: String? = null
@@ -198,7 +198,7 @@ class GhStackService(private val project: Project) {
             result = if (git.checkoutBranch(repository, temporaryBranch)) {
                 requireCli().unstackLocal()
             } else {
-                pruneFailure(GhStackBundle.message("prune.error.checkout.branch", temporaryBranch))
+                failure(GhStackBundle.message("prune.error.checkout.branch", temporaryBranch))
             }
         } finally {
             if (!git.checkoutBranch(repository, originalBranch)) {
@@ -209,11 +209,113 @@ class GhStackService(private val project: Project) {
                 cleanupError = cleanupError?.let { "$it\n$deleteError" } ?: deleteError
             }
         }
-        cleanupError?.let { return pruneFailure(it) }
-        return result ?: pruneFailure(GhStackBundle.message("prune.error.unknown"))
+        cleanupError?.let { return failure(it) }
+        return result ?: failure(GhStackBundle.message("prune.error.unknown"))
     }
 
-    private fun pruneFailure(message: String): GhResult = GhResult(exitCode = 1, stdout = "", stderr = message)
+    /**
+     * Renames [oldName] to [newName] and re-initializes the stack locally with the renamed branch.
+     *
+     * `gh stack modify` is TUI-only, so the supported restructure is unstack then init. GitHub is not touched:
+     * the other branches and their pull requests stay as they are, and the next push or sync links the stack
+     * again. Must not run on the EDT.
+     */
+    fun renameLayerBranch(
+        oldName: String,
+        newName: String,
+        trunk: String,
+        branches: List<String>,
+    ): GhResult {
+        val repository = selectedRepository()
+            ?: return failure(GhStackBundle.message("prune.error.no.repository"))
+        if (oldName !in branches) {
+            return failure(GhStackBundle.message("rename.error.not.in.stack", oldName))
+        }
+        if (newName == oldName) {
+            return failure(GhStackBundle.message("rename.error.unchanged"))
+        }
+        val localBranches = git.localBranchNames(repository)
+        // `gh stack init` creates missing branches, which would silently recreate a layer at HEAD if the view is
+        // stale, so every branch in the stack must still exist locally.
+        val missing = branches.firstOrNull { it !in localBranches }
+        if (missing != null) {
+            return failure(GhStackBundle.message("rename.error.missing", missing))
+        }
+        if (newName in localBranches) {
+            return failure(GhStackBundle.message("rename.error.exists", newName))
+        }
+
+        val originalBranch = git.currentBranchName(repository)
+        var renamed = false
+        try {
+            val unstack = unstackForRename(repository, oldName)
+            if (!unstack.succeeded) return unstack
+
+            val gitError = git.renameBranch(repository, oldName, newName)
+            if (gitError != null) {
+                // The stack is already unstacked; adopt its original branches again so a failed rename does not
+                // silently drop it from local tracking.
+                val message = "${GhStackBundle.message("rename.error.rename", oldName, newName)}\n\n$gitError"
+                val recovery = requireCli().init(branches, trunk)
+                return failure(if (recovery.succeeded) message else "$message\n\n${recovery.errorText()}")
+            }
+            renamed = true
+            git.unsetUpstream(repository, newName)
+
+            val renamedBranches = branches.map { if (it == oldName) newName else it }
+            val init = requireCli().init(renamedBranches, trunk)
+            if (init.succeeded) return init
+            return failure(
+                "${init.errorText()}\n\n" +
+                    GhStackBundle.message("rename.error.init", trunk, renamedBranches.joinToString(" ")),
+            )
+        } finally {
+            restoreBranch(repository, originalBranch, oldName, newName, renamed)
+        }
+    }
+
+    /**
+     * Removes the stack that contains [branch] from local tracking. A numbered stack is unstacked by number; an
+     * unnumbered stack is resolved from the checked-out branch, so a layer of it is checked out when the current
+     * branch is the (possibly shared) trunk.
+     */
+    private fun unstackForRename(repository: GitRepository, branch: String): GhResult {
+        val stack = loadTrackedStacks().getOrNull()?.stacks?.firstOrNull { branch in it.branches }
+        val current = git.currentBranchName(repository)
+        // The panel only shows the stack that contains the checked-out branch, so a layer of it selects the stack
+        // without needing its number.
+        if (stack == null || current in stack.branches) {
+            return requireCli().unstackLocal()
+        }
+        val number = stack.number
+        if (number != null && number > 0) {
+            return requireCli().unstackLocal(number)
+        }
+        val layer = stack.branches.firstOrNull()
+            ?: return requireCli().unstackLocal()
+        if (!git.checkoutBranch(repository, layer)) {
+            return failure(GhStackBundle.message("rename.error.checkout", layer))
+        }
+        return requireCli().unstackLocal()
+    }
+
+    /**
+     * Switches back to the branch the rename started on, unless that branch was the renamed one. `gh stack init`
+     * checks out the top branch, so without this renaming a lower layer would move the user away from it.
+     */
+    private fun restoreBranch(
+        repository: GitRepository,
+        originalBranch: String?,
+        oldName: String,
+        newName: String,
+        renamed: Boolean,
+    ) {
+        val target = branchToRestore(originalBranch, oldName, newName, renamed) ?: return
+        if (git.currentBranchName(repository) == target) return
+        git.checkoutBranch(repository, target)
+    }
+
+    private fun failure(message: String): GhResult = GhResult(exitCode = 1, stdout = "", stderr = message)
 
     fun addBranch(name: String): GhResult = requireCli().addBranch(name)
 
