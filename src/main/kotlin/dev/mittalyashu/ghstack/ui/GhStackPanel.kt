@@ -108,6 +108,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private var disposed = false
 
     private lateinit var actionToolbar: ActionToolbar
+    private lateinit var rebaseToolbar: ActionToolbar
     private val copyBranchNameAction = object : TooltipAction(
         GhStackBundle.message("panel.copy.branch"),
         GhStackBundle.message("panel.copy.branch.description"),
@@ -124,6 +125,9 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         actionToolbar = ActionManager.getInstance()
             .createActionToolbar(ActionPlaces.TOOLBAR, createActions(), true)
         actionToolbar.targetComponent = this
+        rebaseToolbar = ActionManager.getInstance()
+            .createActionToolbar(ActionPlaces.TOOLBAR, createRebaseGroup(), true)
+            .apply { targetComponent = this@GhStackPanel }
 
         add(JPanel(BorderLayout()).apply {
             add(actionToolbar.component, BorderLayout.NORTH)
@@ -171,8 +175,11 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     /** The current stack column: the stack list with its status summary below it. */
     private fun createCurrentStackColumn(): JComponent = JPanel(BorderLayout()).apply {
-        add(JBLabel(GhStackBundle.message("panel.current.stack.title")).apply {
-            border = JBUI.Borders.empty(4, 8)
+        add(JPanel(BorderLayout()).apply {
+            add(JBLabel(GhStackBundle.message("panel.current.stack.title")).apply {
+                border = JBUI.Borders.empty(4, 8, 4, 4)
+            }, BorderLayout.WEST)
+            add(rebaseToolbar.component, BorderLayout.CENTER)
         }, BorderLayout.NORTH)
         add(JBScrollPane(list), BorderLayout.CENTER)
         add(status, BorderLayout.SOUTH)
@@ -384,7 +391,6 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = initStack()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
-        group.add(createRebaseGroup())
         group.add(object : TooltipAction(
             GhStackBundle.message("panel.rebase.continue"),
             GhStackBundle.message("panel.rebase.continue.description"),
