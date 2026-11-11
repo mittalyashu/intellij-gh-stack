@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Follow the repository of the file selected in the editor by default, keeping the previously followed repository when the file is outside every Git root, and add an **Auto (follow current file)** entry to the repository selector so the panel can return to that mode after pinning a repository
 - Move the **Rebase stack** action from the panel toolbar into the **Current stack** header, next to its title, keeping its rebase variants in one dropdown
 - Display branches in the **Current stack** area in stack order with the top branch at the top and the trunk branch at the bottom
 - Draw the **Current stack** branches as a commit graph, with a vertical lane and a node per branch, so the stack's flow from the trunk up to the top branch is visible at a glance

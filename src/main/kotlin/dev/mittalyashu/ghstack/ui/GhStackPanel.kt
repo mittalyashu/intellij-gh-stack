@@ -14,6 +14,9 @@ import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.FileEditorManagerEvent
+import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -22,6 +25,7 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DoNotAskOption
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.PopupHandler
@@ -81,7 +85,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         cellRenderer = StackRowRenderer()
         emptyText.text = GhStackBundle.message("status.loading")
     }
-    private val repositoryCombo = ComboBox<RepositoryChoice>().apply {
+    private val repositoryCombo = ComboBox<RepositoryOption>().apply {
         renderer = RepositoryRenderer()
         addActionListener { onRepositorySelected() }
     }
@@ -166,6 +170,13 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 }
             },
         )
+        project.messageBus.connect(this).subscribe(
+            FileEditorManagerListener.FILE_EDITOR_MANAGER,
+            object : FileEditorManagerListener {
+                override fun selectionChanged(event: FileEditorManagerEvent) = followEditorRepository()
+                override fun fileOpened(source: FileEditorManager, file: VirtualFile) = followEditorRepository()
+            },
+        )
 
         scheduleRefresh()
     }
@@ -190,17 +201,44 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     /**
+     * Follows the repository of the newly selected editor file while the selector is in auto mode. A switch
+     * within the same repository, or to a file outside every repository, does not reload the stack. When the
+     * repository does change, its predecessor's rows are dropped before the debounced reload, so a click in that
+     * window cannot run a row's command against the new repository.
+     */
+    private fun followEditorRepository() {
+        if (disposed || !ghstack.isAutoRepository()) return
+        val before = ghstack.selectedRepository()?.root?.toNioPath()?.normalize()
+        ghstack.syncAutoRepository()
+        if (ghstack.selectedRepository()?.root?.toNioPath()?.normalize() == before) return
+        invalidateRows()
+        scheduleRefresh()
+    }
+
+    /** Drops rows that belong to a repository the panel no longer targets, so they can't act on the new one. */
+    private fun invalidateRows() {
+        displayedRoot = null
+        listModel.clear()
+        status.text = GhStackBundle.message("status.loading")
+        list.emptyText.text = GhStackBundle.message("status.loading")
+        allStacksPanel.clear()
+    }
+
+    /**
      * Rebuilds the repository selector and loads the selected repository's stack. A refresh requested while a
      * load is in flight (or a selection made mid-load) is queued and run once the current load finishes, so a
      * quick repository switch is never dropped.
      */
     private fun refresh() {
         if (disposed) return
+        // Auto mode follows the editor, so re-resolve the context before snapshotting the root; the listener only
+        // sees changes made after the panel was created.
+        ghstack.syncAutoRepository()
         syncRepositorySelector()
         val root = ghstack.selectedRepository()?.root?.toNioPath()?.normalize()
         // The rows belong to the repository that produced them; blank them as soon as the selector points elsewhere
         // so a stale row can't be checked out in the newly selected repository.
-        if (displayedRoot != root) allStacksPanel.clear()
+        if (displayedRoot != root) invalidateRows()
         if (loading) {
             refreshQueued = true
             return
@@ -255,30 +293,43 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     /** Mirrors the ghstack service's repository list and selection into the combo box. */
     private fun syncRepositorySelector() {
         val choices = ghstack.repositoryChoices()
-        val selectedRoot = ghstack.selectedRepositoryRoot() ?: choices.firstOrNull()?.root
+        val options = repositoryOptions(choices)
+        val selectedRoot = ghstack.selectedRepositoryRoot()
+        val selected = when {
+            selectedRoot == null -> RepositoryOption.Auto
+            // A pinned repository that disappeared falls back to the same entry the service resolves.
+            else -> options.firstOrNull { it is RepositoryOption.Fixed && it.choice.root == selectedRoot }
+                ?: choices.firstOrNull()?.let { RepositoryOption.Fixed(it) }
+                ?: RepositoryOption.Auto
+        }
         syncingRepository = true
         try {
             val current = (0 until repositoryCombo.itemCount).map { repositoryCombo.getItemAt(it) }
-            if (current != choices) {
+            if (current != options) {
                 repositoryCombo.removeAllItems()
-                choices.forEach { repositoryCombo.addItem(it) }
+                options.forEach { repositoryCombo.addItem(it) }
             }
-            repositoryCombo.selectedItem = choices.firstOrNull { it.root == selectedRoot }
-                ?: choices.firstOrNull()
+            repositoryCombo.selectedItem = selected
         } finally {
             syncingRepository = false
         }
         repositoryRow.isVisible = choices.size > 1
     }
 
+    private fun repositoryOptions(choices: List<RepositoryChoice>): List<RepositoryOption> = buildList {
+        add(RepositoryOption.Auto)
+        choices.forEach { add(RepositoryOption.Fixed(it)) }
+    }
+
     /** Applies the user's repository choice to the ghstack service and reloads that repository's stack. */
     private fun onRepositorySelected() {
         if (syncingRepository) return
-        val choice = repositoryCombo.selectedItem as? RepositoryChoice ?: return
+        val option = repositoryCombo.selectedItem ?: return
+        val root = (option as? RepositoryOption.Fixed)?.choice?.root
         syncingRepository = true
         try {
             // The ghstack service publishes synchronously, so the flag keeps this panel from handling its own event twice.
-            ghstack.selectRepository(choice.root)
+            ghstack.selectRepository(root)
         } finally {
             syncingRepository = false
         }
@@ -647,6 +698,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun runGh(title: String, command: () -> GhResult) = runTask(title) { RebaseOutcome(command()) }
 
     private fun runTask(title: String, command: () -> RebaseOutcome?) {
+        // Auto mode targets whatever the editor shows right now, even if no refresh ran since the last tab switch.
+        ghstack.syncAutoRepository()
         // Pin the repository for the whole task so switching to another repository mid-rebase cannot split the
         // stash, the gh command, and the stash restore across different repositories.
         val root = ghstack.selectedRepository()?.root?.toNioPath()?.normalize()
@@ -699,20 +752,38 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 }
 
-private class RepositoryRenderer : ColoredListCellRenderer<RepositoryChoice>() {
+/** An entry in the panel's repository selector: auto (follow the current file) or a concrete repository. */
+private sealed interface RepositoryOption {
+    data object Auto : RepositoryOption
+    data class Fixed(val choice: RepositoryChoice) : RepositoryOption
+}
+
+private class RepositoryRenderer : ColoredListCellRenderer<RepositoryOption>() {
     override fun customizeCellRenderer(
-        list: JList<out RepositoryChoice>,
-        value: RepositoryChoice?,
+        list: JList<out RepositoryOption>,
+        value: RepositoryOption?,
         index: Int,
         selected: Boolean,
         hasFocus: Boolean,
     ) {
         ipad = JBUI.insets(2, 4)
-        value ?: return
-        icon = if (value.isSubmodule) AllIcons.Nodes.Module else AllIcons.Vcs.Branch
-        append(value.label, SimpleTextAttributes.REGULAR_ATTRIBUTES)
-        if (value.isSubmodule) {
-            append("  ${GhStackBundle.message("panel.repository.submodule")}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+        when (value) {
+            null -> return
+            RepositoryOption.Auto -> {
+                icon = AllIcons.General.AutoscrollToSource
+                append(GhStackBundle.message("panel.repository.auto"), SimpleTextAttributes.REGULAR_ATTRIBUTES)
+            }
+
+            is RepositoryOption.Fixed -> {
+                icon = if (value.choice.isSubmodule) AllIcons.Nodes.Module else AllIcons.Vcs.Branch
+                append(value.choice.label, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                if (value.choice.isSubmodule) {
+                    append(
+                        "  ${GhStackBundle.message("panel.repository.submodule")}",
+                        SimpleTextAttributes.GRAYED_ATTRIBUTES,
+                    )
+                }
+            }
         }
     }
 }
