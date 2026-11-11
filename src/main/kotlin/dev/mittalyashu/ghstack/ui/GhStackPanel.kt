@@ -42,6 +42,7 @@ import com.github.mittalyashu.ghstack.model.StackView
 import com.github.mittalyashu.ghstack.model.TrackedStack
 import com.github.mittalyashu.ghstack.model.TrackedStacks
 import com.github.mittalyashu.ghstack.service.GhStackService
+import com.github.mittalyashu.ghstack.service.GitService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
 import com.github.mittalyashu.ghstack.service.RebaseAction
 import com.github.mittalyashu.ghstack.service.RepositoryChoice
@@ -69,7 +70,8 @@ import javax.swing.event.PopupMenuEvent
 import javax.swing.event.PopupMenuListener
 
 class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
-    private val service = project.getService(GhStackService::class.java)
+    private val ghstack = project.getService(GhStackService::class.java)
+    private val git = project.getService(GitService::class.java)
     private val log = Logger.getInstance(GhStackPanel::class.java)
     private val status = JBLabel("", SwingConstants.LEFT).apply {
         border = JBUI.Borders.empty(8, 12)
@@ -185,7 +187,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun refresh() {
         if (Disposer.isDisposed(this)) return
         syncRepositorySelector()
-        val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
+        val root = ghstack.selectedRepository()?.root?.toNioPath()?.normalize()
         // The rows belong to the repository that produced them; blank them as soon as the selector points elsewhere
         // so a stale row can't be checked out in the newly selected repository.
         if (displayedRoot != root) allStacksPanel.clear()
@@ -207,12 +209,12 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 try {
                     // Pin the captured root so a repository switch mid-load cannot mix this result with another
                     // repository's catalog or stack (the completion guard below only compares the final selection).
-                    service.withPinnedRepository(root) {
+                    ghstack.withPinnedRepository(root) {
                         // Load the tracked catalog first: it is a local read and shouldn't wait on `gh stack view`.
-                        tracked = runCatching { service.loadTrackedStacks() }
+                        tracked = runCatching { ghstack.loadTrackedStacks() }
                             .getOrElse { Result.failure(it) }
-                        localBranches = service.localBranchNames()
-                        result = service.loadCurrentStack()
+                        localBranches = ghstack.selectedRepository()?.let(git::localBranchNames) ?: emptySet()
+                        result = ghstack.loadCurrentStack()
                     }
                 } finally {
                     val loaded = result
@@ -222,7 +224,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                         loading = false
                         if (!Disposer.isDisposed(this@GhStackPanel)) {
                             val selectionChanged =
-                                service.selectedRepository()?.root?.toNioPath()?.normalize() != root
+                                ghstack.selectedRepository()?.root?.toNioPath()?.normalize() != root
                             // The in-flight result belongs to the repository captured above, so don't show it under
                             // another repository's selector; reload instead.
                             if (!selectionChanged) {
@@ -240,10 +242,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         })
     }
 
-    /** Mirrors the service's repository list and selection into the combo box. */
+    /** Mirrors the ghstack service's repository list and selection into the combo box. */
     private fun syncRepositorySelector() {
-        val choices = service.repositoryChoices()
-        val selectedRoot = service.selectedRepositoryRoot() ?: choices.firstOrNull()?.root
+        val choices = ghstack.repositoryChoices()
+        val selectedRoot = ghstack.selectedRepositoryRoot() ?: choices.firstOrNull()?.root
         syncingRepository = true
         try {
             val current = (0 until repositoryCombo.itemCount).map { repositoryCombo.getItemAt(it) }
@@ -259,14 +261,14 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         repositoryRow.isVisible = choices.size > 1
     }
 
-    /** Applies the user's repository choice to the service and reloads that repository's stack. */
+    /** Applies the user's repository choice to the ghstack service and reloads that repository's stack. */
     private fun onRepositorySelected() {
         if (syncingRepository) return
         val choice = repositoryCombo.selectedItem as? RepositoryChoice ?: return
         syncingRepository = true
         try {
-            // The service publishes synchronously, so the flag keeps this panel from handling its own event twice.
-            service.selectRepository(choice.root)
+            // The ghstack service publishes synchronously, so the flag keeps this panel from handling its own event twice.
+            ghstack.selectRepository(choice.root)
         } finally {
             syncingRepository = false
         }
@@ -388,7 +390,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = rebaseContinue()
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
             override fun update(e: AnActionEvent) {
-                e.presentation.isVisible = service.isRebaseInProgress()
+                e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
             }
         })
         group.add(object : TooltipAction(
@@ -400,7 +402,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = rebaseAbort()
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
             override fun update(e: AnActionEvent) {
-                e.presentation.isVisible = service.isRebaseInProgress()
+                e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
             }
         })
         return group
@@ -453,14 +455,14 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun addBranch() {
         val name = AddBranchDialog(project).showAndGetBranchName() ?: return
         runGh(GhStackBundle.message("progress.add")) {
-            service.addBranch(name)
+            ghstack.addBranch(name)
         }
     }
 
     private fun checkoutSelected() {
         val target = checkoutTargetFor(selectedLayer()) ?: return
         runGh(GhStackBundle.message("progress.checkout")) {
-            service.checkout(target)
+            ghstack.checkout(target)
         }
     }
 
@@ -478,7 +480,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         if (name.isEmpty()) return
         runTask(GhStackBundle.message("progress.init")) {
             ensureRerere()
-            RebaseOutcome(service.initStack(name))
+            RebaseOutcome(ghstack.initStack(name))
         }
     }
 
@@ -490,14 +492,15 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun runRebase(args: List<String>) {
         runTask(GhStackBundle.message("progress.rebase")) {
             val settings = GhStackSettings.getInstance()
-            val stash = when (decideRebaseAction(settings.stashMode, service.isDirty())) {
+            val dirty = ghstack.selectedRepository()?.let(git::isDirty) == true
+            val stash = when (decideRebaseAction(settings.stashMode, dirty)) {
                 RebaseAction.RUN -> false
                 RebaseAction.STASH -> true
                 RebaseAction.PROMPT -> askToStash(settings) ?: return@runTask null
             }
             ensureRerere()
             val flags = args.toTypedArray()
-            if (stash) service.rebaseWithStash(*flags) else RebaseOutcome(service.rebase(*flags))
+            if (stash) ghstack.rebaseWithStash(*flags) else RebaseOutcome(ghstack.rebase(*flags))
         }
     }
 
@@ -508,18 +511,19 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
      * non-interactively. Call from a background thread.
      */
     private fun ensureRerere() {
+        val repository = ghstack.selectedRepository() ?: return
         val action = decideRerereAction(
-            enabled = service.isRerereEnabled(),
-            declined = service.isRerereDeclined(),
+            enabled = git.isRerereEnabled(repository),
+            declined = git.isRerereDeclined(repository),
             interactive = !ApplicationManager.getApplication().isHeadlessEnvironment,
         )
         if (action == RerereAction.SKIP) return
         when (askToEnableRerere()) {
-            true -> if (!service.enableRerere()) {
+            true -> if (!git.enableRerere(repository)) {
                 log.warn("Could not enable git rerere; continuing without it")
             }
 
-            false -> if (!service.declineRerere()) {
+            false -> if (!git.declineRerere(repository)) {
                 log.warn("Could not record the declined git rerere prompt; it may be asked again")
             }
 
@@ -588,7 +592,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun rebaseContinue() {
         runGh(GhStackBundle.message("progress.rebase.continue")) {
-            service.rebaseContinue()
+            ghstack.rebaseContinue()
         }
     }
 
@@ -601,13 +605,13 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         ) == Messages.YES
         if (!confirmed) return
         runGh(GhStackBundle.message("progress.rebase.abort")) {
-            service.rebaseAbort()
+            ghstack.rebaseAbort()
         }
     }
 
     private fun switchToStack(stack: TrackedStack) {
         runGh(GhStackBundle.message("progress.checkout")) {
-            service.checkout(stack.checkoutTarget())
+            ghstack.checkout(stack.checkoutTarget())
         }
     }
 
@@ -620,7 +624,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         ) == Messages.YES
         if (!confirmed) return
         runGh(GhStackBundle.message("progress.prune")) {
-            service.pruneLocalStack(stack)
+            ghstack.pruneLocalStack(stack)
         }
     }
 
@@ -629,17 +633,18 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun runTask(title: String, command: () -> RebaseOutcome?) {
         // Pin the repository for the whole task so switching to another repository mid-rebase cannot split the
         // stash, the gh command, and the stash restore across different repositories.
-        val root = service.selectedRepository()?.root?.toNioPath()?.normalize()
+        val root = ghstack.selectedRepository()?.root?.toNioPath()?.normalize()
         runningTasks++
         repositoryCombo.isEnabled = false
         allStacksPanel.setBusy(true)
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
             override fun run(indicator: ProgressIndicator) {
                 try {
-                    val outcome = service.withPinnedRepository(root) {
+                    val outcome = ghstack.withPinnedRepository(root) {
                         val outcome = command()
                         outcome?.stashToRestore?.let { stash ->
-                            if (!service.restoreStash(stash)) {
+                            val repository = ghstack.selectedRepository()
+                            if (repository == null || !git.restoreStash(repository, stash)) {
                                 ApplicationManager.getApplication().invokeLater({
                                     Messages.showErrorDialog(
                                         project,
@@ -649,7 +654,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                                 }, ModalityState.any())
                             }
                         }
-                        service.refreshGit()
+                        ghstack.selectedRepository()?.let(git::refresh)
                         outcome
                     }
                     ApplicationManager.getApplication().invokeLater({

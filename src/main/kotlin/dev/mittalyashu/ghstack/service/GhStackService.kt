@@ -1,11 +1,7 @@
 package com.github.mittalyashu.ghstack.service
 
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.messages.Topic
 import com.github.mittalyashu.ghstack.GhStackBundle
 import com.github.mittalyashu.ghstack.cli.GhCli
@@ -15,18 +11,10 @@ import com.github.mittalyashu.ghstack.cli.StackJson
 import com.github.mittalyashu.ghstack.model.StackLoadResult
 import com.github.mittalyashu.ghstack.model.TrackedStack
 import com.github.mittalyashu.ghstack.model.TrackedStacks
-import git4idea.commands.Git
-import git4idea.commands.GitCommand
-import git4idea.commands.GitLineHandler
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryManager
-import git4idea.stash.GitStashOperations
-import git4idea.stash.loadStashStack
 import java.nio.file.Files
 import java.nio.file.Path
-
-/** A stash created around a rebase, identified by commit hash rather than by its (shifting) `stash@{n}` index. */
-data class StashRef(val hash: String, val message: String)
 
 /** The rebase result, plus the stash to restore when the rebase succeeded with changes stashed. */
 data class RebaseOutcome(val result: GhResult, val stashToRestore: StashRef? = null)
@@ -36,9 +24,13 @@ fun interface RepositorySelectionListener {
     fun repositorySelected()
 }
 
+/**
+ * The project-level gh-stack CLI service used by the panel. It owns the repository selection and the high-level
+ * stack commands; plain Git operations are delegated to [GitService].
+ */
 @Service(Service.Level.PROJECT)
 class GhStackService(private val project: Project) {
-    private val log = Logger.getInstance(GhStackService::class.java)
+    private val git = project.getService(GitService::class.java)
 
     companion object {
         /** Published when the panel's repository selector changes, so every open panel stays in sync. */
@@ -137,12 +129,6 @@ class GhStackService(private val project: Project) {
         return runCatching { StackJson.parseTrackedFile(Files.readString(file)) }
     }
 
-    /** Short names of the selected repository's local branches, used to tell a dangling tracked stack from a live one. */
-    fun localBranchNames(): Set<String> {
-        val repository = selectedRepository() ?: return emptySet()
-        return repository.branches.localBranches.mapTo(mutableSetOf()) { it.name }
-    }
-
     /**
      * Removes [stack] from local tracking only (`gh stack unstack --local`), leaving GitHub untouched.
      *
@@ -164,26 +150,26 @@ class GhStackService(private val project: Project) {
             ?: return pruneFailure(GhStackBundle.message("prune.error.no.repository"))
         val temporaryBranch = stack.branches.firstOrNull { it.isNotBlank() }
             ?: return pruneFailure(GhStackBundle.message("prune.error.no.branch"))
-        val originalBranch = currentBranchName(repository.root)
+        val originalBranch = git.currentBranchName(repository)
             ?: return pruneFailure(GhStackBundle.message("prune.error.detached"))
 
         // Point the temporary branch at HEAD so switching to it is safe even with uncommitted changes.
-        if (!runGit(repository.root, GitCommand.BRANCH, temporaryBranch, "HEAD")) {
+        if (!git.createBranch(repository, temporaryBranch)) {
             return pruneFailure(GhStackBundle.message("prune.error.create.branch", temporaryBranch))
         }
         var result: GhResult? = null
         var cleanupError: String? = null
         try {
-            result = if (runGit(repository.root, GitCommand.CHECKOUT, temporaryBranch)) {
+            result = if (git.checkoutBranch(repository, temporaryBranch)) {
                 requireCli().unstackLocal()
             } else {
                 pruneFailure(GhStackBundle.message("prune.error.checkout.branch", temporaryBranch))
             }
         } finally {
-            if (!runGit(repository.root, GitCommand.CHECKOUT, originalBranch)) {
+            if (!git.checkoutBranch(repository, originalBranch)) {
                 cleanupError = GhStackBundle.message("prune.error.restore.branch", originalBranch)
             }
-            if (!runGit(repository.root, GitCommand.BRANCH, "-D", temporaryBranch)) {
+            if (!git.deleteBranch(repository, temporaryBranch)) {
                 val deleteError = GhStackBundle.message("prune.error.delete.branch", temporaryBranch)
                 cleanupError = cleanupError?.let { "$it\n$deleteError" } ?: deleteError
             }
@@ -194,26 +180,6 @@ class GhStackService(private val project: Project) {
 
     private fun pruneFailure(message: String): GhResult = GhResult(exitCode = 1, stdout = "", stderr = message)
 
-    /** The checked-out branch's short name, or null when HEAD is detached. */
-    private fun currentBranchName(root: VirtualFile): String? {
-        val handler = GitLineHandler(project, root, GitCommand.REV_PARSE)
-        handler.addParameters("--abbrev-ref", "HEAD")
-        handler.setSilent(true)
-        val result = Git.getInstance().runCommand(handler)
-        return result.output.firstOrNull()?.trim()?.takeUnless { it.isEmpty() || it == "HEAD" }
-    }
-
-    private fun runGit(root: VirtualFile, command: GitCommand, vararg params: String): Boolean {
-        val handler = GitLineHandler(project, root, command)
-        handler.addParameters(*params)
-        handler.setSilent(true)
-        val result = Git.getInstance().runCommand(handler)
-        if (!result.success()) {
-            log.warn("git ${command.name().lowercase()} ${params.joinToString(" ")} failed: ${result.errorOutputAsJoinedString}")
-        }
-        return result.success()
-    }
-
     fun addBranch(name: String): GhResult = requireCli().addBranch(name)
 
     fun checkout(target: String): GhResult = requireCli().checkout(target)
@@ -223,79 +189,17 @@ class GhStackService(private val project: Project) {
     fun rebase(vararg flags: String): GhResult = requireCli().rebase(*flags)
 
     /**
-     * True when `gh stack rebase` would refuse to run. Mirrors gh-stack's own check
-     * (`git status --porcelain --untracked-files=all`), so untracked files count. Must not run on the EDT.
-     */
-    fun isDirty(): Boolean {
-        val repo = selectedRepository() ?: return false
-        val handler = GitLineHandler(project, repo.root, GitCommand.STATUS)
-        handler.addParameters("--porcelain", "--untracked-files=all")
-        handler.setSilent(true)
-        val result = Git.getInstance().runCommand(handler)
-        return result.success() && result.output.any { it.isNotBlank() }
-    }
-
-    /**
-     * Whether the effective git config has `rerere.enabled=true`. Unset, `false`, and a failed `git config`
-     * all count as disabled, matching how git itself decides whether to record resolutions.
-     */
-    fun isRerereEnabled(): Boolean {
-        val root = selectedRepository()?.root ?: return false
-        return gitConfig(root, "--get", "--bool", "rerere.enabled") == "true"
-    }
-
-    /**
-     * Whether rerere was previously declined. Reads the project-local `gh-stack.rerere-declined` key that
-     * `gh stack` itself writes, so the plugin and a terminal `gh stack` agree on "don't ask again".
-     */
-    fun isRerereDeclined(): Boolean {
-        val root = selectedRepository()?.root ?: return false
-        return gitConfig(root, "--get", "gh-stack.rerere-declined") == "true"
-    }
-
-    /**
-     * Enables rerere in the project-local config, matching `gh stack`'s `ensureRerere`: both `rerere.enabled`
-     * and `rerere.autoupdate`. Returns false when a write fails. Must not run on the EDT.
-     */
-    fun enableRerere(): Boolean {
-        val root = selectedRepository()?.root ?: return false
-        return setGitConfig(root, "rerere.enabled", "true") &&
-            setGitConfig(root, "rerere.autoupdate", "true")
-    }
-
-    /** Records a declined prompt in project-local config so neither the plugin nor `gh stack` asks again. */
-    fun declineRerere(): Boolean {
-        val root = selectedRepository()?.root ?: return false
-        return setGitConfig(root, "gh-stack.rerere-declined", "true")
-    }
-
-    private fun gitConfig(root: VirtualFile, vararg params: String): String? {
-        val handler = GitLineHandler(project, root, GitCommand.CONFIG)
-        handler.addParameters(*params)
-        handler.setSilent(true)
-        val result = Git.getInstance().runCommand(handler)
-        return if (result.success()) result.output.firstOrNull()?.trim() else null
-    }
-
-    private fun setGitConfig(root: VirtualFile, key: String, value: String): Boolean {
-        val handler = GitLineHandler(project, root, GitCommand.CONFIG)
-        handler.addParameters("--local", key, value)
-        handler.setSilent(true)
-        return Git.getInstance().runCommand(handler).success()
-    }
-
-    /**
      * Stashes local changes (including untracked files), runs the rebase, and reports the stash to restore
      * only if the rebase succeeded. After a failed rebase (e.g. a conflict) the stash is kept and the error mentions it.
      */
     fun rebaseWithStash(vararg flags: String): RebaseOutcome {
-        val repo = selectedRepository() ?: error("This project is not under Git.")
+        val repository = selectedRepository() ?: error("This project is not under Git.")
         val message = GhStackBundle.message("stash.name")
-        val headBefore = stashHead(repo.root)
-        stashLocalChanges(repo.root, message)?.let { stashError ->
+        val headBefore = git.stashHead(repository)
+        git.stashLocalChanges(repository, message)?.let { stashError ->
             return RebaseOutcome(GhResult(1, "", stashError))
         }
-        val stash = stashHead(repo.root)?.takeIf { it != headBefore }
+        val stash = git.stashHead(repository)?.takeIf { it != headBefore }
 
         val result = rebase(*flags)
         return when {
@@ -307,62 +211,14 @@ class GhStackService(private val project: Project) {
         }
     }
 
-    /**
-     * Applies and drops [stash] through Git4Idea's unstash, which shows its own conflict resolver and keeps the stash
-     * on conflict. The progress is modal and the conflict resolver requires a background thread, so call it off the
-     * EDT. Returns false when the stash can't be found.
-     */
-    fun restoreStash(stash: StashRef): Boolean {
-        val repo = selectedRepository() ?: return false
-        val info = runCatching { loadStashStack(project, repo.root) }
-            .getOrNull()
-            ?.firstOrNull { it.hash.asString() == stash.hash }
-            ?: return false
-        GitStashOperations.unstash(project, info, null, true, true)
-        return true
-    }
-
-    /** Returns a git error message, or null when the push succeeded (or there was nothing to stash). */
-    private fun stashLocalChanges(root: VirtualFile, message: String): String? {
-        val handler = GitLineHandler(project, root, GitCommand.STASH)
-        handler.addParameters("push", "--include-untracked", "-m", message)
-        val result = Git.getInstance().runCommand(handler)
-        if (result.success()) return null
-        return result.errorOutputAsJoinedString.ifBlank { "git stash failed" }
-    }
-
-    private fun stashHead(root: VirtualFile): String? {
-        val handler = GitLineHandler(project, root, GitCommand.REV_PARSE)
-        handler.addParameters("--verify", "--quiet", "refs/stash")
-        handler.setSilent(true)
-        val result = Git.getInstance().runCommand(handler)
-        return if (result.success()) result.output.firstOrNull()?.trim()?.ifEmpty { null } else null
-    }
-
     fun rebaseContinue(): GhResult = requireCli().rebaseContinue()
 
     fun rebaseAbort(): GhResult = requireCli().rebaseAbort()
-
-    /** True while a rebase (interactive, merge or apply) is paused in the selected repository, including in linked worktrees. */
-    fun isRebaseInProgress(): Boolean = selectedRepository()?.isRebaseInProgress == true
-
-    fun refreshGit() {
-        val repo = selectedRepository() ?: return
-        VfsUtil.markDirtyAndRefresh(true, true, true, repo.root)
-        repo.update()
-        findGitCommonDir(repo.root)?.let { commonDir ->
-            VfsUtil.markDirtyAndRefresh(true, true, true, commonDir)
-        }
-    }
 
     private fun requireCli(): GhCli = cliFor(gitRoot() ?: error("This project is not under Git."))
 
     private fun cliFor(root: Path): GhCli {
         val console = GhStackConsoleService.getInstance(project)
         return GhCli(root, onCommandRun = console::record)
-    }
-
-    private fun findGitCommonDir(root: VirtualFile): VirtualFile? {
-        return LocalFileSystem.getInstance().refreshAndFindFileByNioFile(resolveGitCommonDir(root.toNioPath()))
     }
 }
