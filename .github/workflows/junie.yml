@@ -1,0 +1,48 @@
+name: Junie commands
+
+on:
+  # Issue events
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created, edited]
+  # PR review events
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+# Prevent concurrent runs for the same issue/PR to avoid conflicts
+concurrency:
+  group: junie-commands-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  command:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    # Conditional execution based on event type
+    if: |
+      # Issues: run when opened (always) or commented (if contains @junie-agent)
+      (github.event_name == 'issues') ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@junie-agent')) ||
+      # PR review comments: run if contains @junie-agent
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@junie-agent')) ||
+      # PR reviews: run if review body contains @junie-agent
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@junie-agent'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: JetBrains/junie-github-action@v1
+        with:
+          junie_api_key: ${{ secrets.JUNIE_API_KEY }}
+          use_single_comment: "true"
+          # Attach GitHub context for issue events, which helps Junie understand the issue
+          attach_github_context_to_custom_prompt: "true"
