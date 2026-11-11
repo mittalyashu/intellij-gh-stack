@@ -42,6 +42,7 @@ import com.github.mittalyashu.ghstack.model.StackView
 import com.github.mittalyashu.ghstack.model.TrackedStack
 import com.github.mittalyashu.ghstack.model.TrackedStacks
 import com.github.mittalyashu.ghstack.service.GhStackService
+import com.github.mittalyashu.ghstack.service.GitService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
 import com.github.mittalyashu.ghstack.service.RebaseAction
 import com.github.mittalyashu.ghstack.service.RepositoryChoice
@@ -70,6 +71,7 @@ import javax.swing.event.PopupMenuListener
 
 class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
     private val service = project.getService(GhStackService::class.java)
+    private val git = project.getService(GitService::class.java)
     private val log = Logger.getInstance(GhStackPanel::class.java)
     private val status = JBLabel("", SwingConstants.LEFT).apply {
         border = JBUI.Borders.empty(8, 12)
@@ -211,7 +213,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                         // Load the tracked catalog first: it is a local read and shouldn't wait on `gh stack view`.
                         tracked = runCatching { service.loadTrackedStacks() }
                             .getOrElse { Result.failure(it) }
-                        localBranches = service.localBranchNames()
+                        localBranches = service.selectedRepository()?.let(git::localBranchNames) ?: emptySet()
                         result = service.loadCurrentStack()
                     }
                 } finally {
@@ -388,7 +390,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = rebaseContinue()
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
             override fun update(e: AnActionEvent) {
-                e.presentation.isVisible = service.isRebaseInProgress()
+                e.presentation.isVisible = service.selectedRepository()?.let(git::isRebaseInProgress) == true
             }
         })
         group.add(object : TooltipAction(
@@ -400,7 +402,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = rebaseAbort()
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
             override fun update(e: AnActionEvent) {
-                e.presentation.isVisible = service.isRebaseInProgress()
+                e.presentation.isVisible = service.selectedRepository()?.let(git::isRebaseInProgress) == true
             }
         })
         return group
@@ -490,7 +492,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private fun runRebase(args: List<String>) {
         runTask(GhStackBundle.message("progress.rebase")) {
             val settings = GhStackSettings.getInstance()
-            val stash = when (decideRebaseAction(settings.stashMode, service.isDirty())) {
+            val dirty = service.selectedRepository()?.let(git::isDirty) == true
+            val stash = when (decideRebaseAction(settings.stashMode, dirty)) {
                 RebaseAction.RUN -> false
                 RebaseAction.STASH -> true
                 RebaseAction.PROMPT -> askToStash(settings) ?: return@runTask null
@@ -508,18 +511,19 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
      * non-interactively. Call from a background thread.
      */
     private fun ensureRerere() {
+        val repository = service.selectedRepository() ?: return
         val action = decideRerereAction(
-            enabled = service.isRerereEnabled(),
-            declined = service.isRerereDeclined(),
+            enabled = git.isRerereEnabled(repository),
+            declined = git.isRerereDeclined(repository),
             interactive = !ApplicationManager.getApplication().isHeadlessEnvironment,
         )
         if (action == RerereAction.SKIP) return
         when (askToEnableRerere()) {
-            true -> if (!service.enableRerere()) {
+            true -> if (!git.enableRerere(repository)) {
                 log.warn("Could not enable git rerere; continuing without it")
             }
 
-            false -> if (!service.declineRerere()) {
+            false -> if (!git.declineRerere(repository)) {
                 log.warn("Could not record the declined git rerere prompt; it may be asked again")
             }
 
@@ -639,7 +643,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                     val outcome = service.withPinnedRepository(root) {
                         val outcome = command()
                         outcome?.stashToRestore?.let { stash ->
-                            if (!service.restoreStash(stash)) {
+                            val repository = service.selectedRepository()
+                            if (repository == null || !git.restoreStash(repository, stash)) {
                                 ApplicationManager.getApplication().invokeLater({
                                     Messages.showErrorDialog(
                                         project,
@@ -649,7 +654,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                                 }, ModalityState.any())
                             }
                         }
-                        service.refreshGit()
+                        service.selectedRepository()?.let(git::refresh)
                         outcome
                     }
                     ApplicationManager.getApplication().invokeLater({
