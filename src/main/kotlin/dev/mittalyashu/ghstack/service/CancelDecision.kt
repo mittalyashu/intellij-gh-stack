@@ -1,5 +1,6 @@
 package com.github.mittalyashu.ghstack.service
 
+import com.github.mittalyashu.ghstack.GhStackBundle
 import com.github.mittalyashu.ghstack.cli.GhResult
 
 /** Where the stash created around a rebase goes once the command is over. */
@@ -33,6 +34,18 @@ internal fun shouldAbortCancelledRebase(
 internal fun isNoRebaseInProgress(result: GhResult): Boolean =
     !result.succeeded &&
         "${result.stdout}\n${result.stderr}".contains("no rebase in progress", ignoreCase = true)
+
+/**
+ * The error shown when the abort that cleans up a cancelled rebase failed. gh-stack reports "no rebase in progress"
+ * for a journal it cannot find, which hides why the tree is still mid-rebase, so that case explains the incomplete
+ * cleanup instead of passing the CLI text through.
+ */
+internal fun abortCleanupError(abort: GhResult): String =
+    if (isNoRebaseInProgress(abort)) {
+        GhStackBundle.message("error.rebase.abort.incomplete")
+    } else {
+        abort.errorText()
+    }
 
 /**
  * Whether the stash created around a rebase can be restored. A failed rebase leaves a paused conflict, and a failed

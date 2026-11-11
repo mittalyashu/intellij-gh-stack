@@ -538,13 +538,8 @@ class GhStackService(private val project: Project) {
             else -> true
         }
         if (abortFailed) {
-            val abortError = if (isNoRebaseInProgress(abort)) {
-                GhStackBundle.message("error.rebase.abort.incomplete")
-            } else {
-                abort.errorText()
-            }
             return RebaseRun(
-                result.copy(stderr = "$abortError\n\n${result.errorText()}"),
+                result.copy(stderr = "${abortCleanupError(abort)}\n\n${result.errorText()}"),
                 abortFailed = true,
             )
         }
