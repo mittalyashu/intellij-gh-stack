@@ -3,6 +3,15 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/ci.yml
+      - src/**
+      - build.gradle.kts
+      - settings.gradle.kts
+      - gradle.properties
+      - gradle/**
+      - gradlew
+      - gradlew.bat
   pull_request:
 
 permissions:
