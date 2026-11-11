@@ -23,7 +23,6 @@ import com.intellij.openapi.ui.DoNotAskOption
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.ColoredListCellRenderer
-import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.SimpleTextAttributes
@@ -714,58 +713,6 @@ private class RepositoryRenderer : ColoredListCellRenderer<RepositoryChoice>() {
         append(value.label, SimpleTextAttributes.REGULAR_ATTRIBUTES)
         if (value.isSubmodule) {
             append("  ${GhStackBundle.message("panel.repository.submodule")}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-        }
-    }
-}
-
-private class StackRowRenderer : ColoredListCellRenderer<StackRow>() {
-    override fun customizeCellRenderer(
-        list: JList<out StackRow>,
-        value: StackRow?,
-        index: Int,
-        selected: Boolean,
-        hasFocus: Boolean,
-    ) {
-        ipad = JBUI.insets(6, 10)
-        when (value) {
-            is StackRow.Trunk -> {
-                icon = AllIcons.Nodes.Module
-                append(value.branchName, SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                append("  trunk", SimpleTextAttributes.GRAY_ITALIC_ATTRIBUTES)
-            }
-
-            is StackRow.Layer -> {
-                val layer = value.layer
-                icon = if (layer.isCurrent) AllIcons.Nodes.Favorite else AllIcons.Vcs.Branch
-                val style = if (layer.isCurrent) {
-                    SimpleTextAttributes(
-                        SimpleTextAttributes.STYLE_BOLD,
-                        JBColor.namedColor("Link.activeForeground", JBColor.BLUE)
-                    )
-                } else {
-                    SimpleTextAttributes.REGULAR_ATTRIBUTES
-                }
-                append(layer.name, style)
-                layer.pr?.let { append("  #${it.number}", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
-                if (layer.isCurrent) append(
-                    "  ${GhStackBundle.message("branch.current")}",
-                    SimpleTextAttributes.GRAY_ITALIC_ATTRIBUTES
-                )
-                if (layer.needsRebase) append(
-                    "  ${GhStackBundle.message("branch.needs.rebase")}",
-                    SimpleTextAttributes.ERROR_ATTRIBUTES
-                )
-                if (layer.isMerged) append(
-                    "  ${GhStackBundle.message("branch.merged")}",
-                    SimpleTextAttributes.GRAYED_ATTRIBUTES
-                )
-                if (layer.isQueued) append(
-                    "  ${GhStackBundle.message("branch.queued")}",
-                    SimpleTextAttributes.GRAYED_ATTRIBUTES
-                )
-            }
-
-            null -> Unit
         }
     }
 }

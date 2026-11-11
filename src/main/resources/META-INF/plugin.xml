@@ -8,7 +8,7 @@
         stacked pull requests without leaving the IDE.</p>
         <ul>
             <li>View the current stacked PR chain in a dedicated <b>GH Stack</b> tool window; the view refreshes automatically as branches and Git state change</li>
-            <li>See each layer's PR number, plus its merged / queued / needs-rebase status and the current branch</li>
+            <li>See the stack as a commit graph, with each layer's PR number, plus its merged / queued / needs-rebase status and the current branch</li>
             <li>Check out a specific layer</li>
             <li>Copy the selected branch name from the stack list with Ctrl/Command+C</li>
             <li>Add a branch on top of the stack</li>
