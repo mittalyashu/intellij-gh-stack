@@ -366,6 +366,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         }
         allStacksPanel.update(tracked, view, localBranches)
         actionToolbar.updateActionsAsync()
+        // The Current stack header owns the paused-rebase actions, so their visibility follows the same refresh.
+        rebaseToolbar.updateActionsAsync()
     }
 
     private fun stackSummary(view: StackView): String {
@@ -440,39 +442,44 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             override fun actionPerformed(e: AnActionEvent) = initStack()
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
         })
-        group.add(object : TooltipAction(
-            GhStackBundle.message("panel.rebase.continue"),
-            GhStackBundle.message("panel.rebase.continue.description"),
-            GhStackBundle.message("panel.rebase.continue.command"),
-            AllIcons.Actions.Resume,
-        ) {
-            override fun actionPerformed(e: AnActionEvent) = rebaseContinue()
-            override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            override fun update(e: AnActionEvent) {
-                e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
-            }
-        })
-        group.add(object : TooltipAction(
-            GhStackBundle.message("panel.rebase.abort"),
-            GhStackBundle.message("panel.rebase.abort.description"),
-            GhStackBundle.message("panel.rebase.abort.command"),
-            AllIcons.Actions.Cancel,
-        ) {
-            override fun actionPerformed(e: AnActionEvent) = rebaseAbort()
-            override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            override fun update(e: AnActionEvent) {
-                e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
-            }
-        })
         return group
     }
 
     /**
-     * The rebase group wrapped in a parent group. A toolbar flattens its root group into separate buttons, so the
-     * wrapper is what keeps the rebase variants behind a single dropdown button.
+     * The rebase group wrapped in a parent group, followed by the actions for a rebase paused on a conflict. A
+     * toolbar flattens its root group into separate buttons, so the wrapper is what keeps the rebase variants
+     * behind a single dropdown button while continue and abort stay next to it.
      */
     private fun createRebaseToolbarActions(): DefaultActionGroup = DefaultActionGroup().apply {
         add(createRebaseGroup())
+        add(createRebaseContinueAction())
+        add(createRebaseAbortAction())
+    }
+
+    private fun createRebaseContinueAction() = object : TooltipAction(
+        GhStackBundle.message("panel.rebase.continue"),
+        GhStackBundle.message("panel.rebase.continue.description"),
+        GhStackBundle.message("panel.rebase.continue.command"),
+        AllIcons.Actions.Resume,
+    ) {
+        override fun actionPerformed(e: AnActionEvent) = rebaseContinue()
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        override fun update(e: AnActionEvent) {
+            e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
+        }
+    }
+
+    private fun createRebaseAbortAction() = object : TooltipAction(
+        GhStackBundle.message("panel.rebase.abort"),
+        GhStackBundle.message("panel.rebase.abort.description"),
+        GhStackBundle.message("panel.rebase.abort.command"),
+        AllIcons.Actions.Cancel,
+    ) {
+        override fun actionPerformed(e: AnActionEvent) = rebaseAbort()
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        override fun update(e: AnActionEvent) {
+            e.presentation.isVisible = ghstack.selectedRepository()?.let(git::isRebaseInProgress) == true
+        }
     }
 
     private fun createRebaseGroup(): DefaultActionGroup {

@@ -28,13 +28,61 @@ class CurrentStackHeaderTest : BasePlatformTestCase() {
         )
     }
 
+    fun testContinueAndAbortSitAfterRebaseInTheCurrentStackHeader() {
+        val panel = GhStackPanel(project)
+        Disposer.register(testRootDisposable, panel)
+
+        val title = findComponent(panel) {
+            it is JBLabel && it.text == GhStackBundle.message("panel.current.stack.title")
+        }
+        assertNotNull("The current stack title is missing", title)
+
+        val headerToolbars = rebaseToolbars(panel)
+        assertEquals("The rebase actions should appear exactly once", 1, headerToolbars.size)
+        val headerToolbar = headerToolbars.single()
+        assertTrue(
+            "The rebase actions should sit in the current stack header",
+            isDescendant(title!!.parent, headerToolbar.component),
+        )
+
+        val labels = headerToolbar.actionGroup.getChildren(null).map { it.templatePresentation.text }
+        assertEquals(
+            listOf(
+                GhStackBundle.message("panel.rebase"),
+                GhStackBundle.message("panel.rebase.continue"),
+                GhStackBundle.message("panel.rebase.abort"),
+            ),
+            labels,
+        )
+    }
+
+    fun testContinueAndAbortLeaveThePanelToolbar() {
+        val panel = GhStackPanel(project)
+        Disposer.register(testRootDisposable, panel)
+
+        val panelToolbar = toolbars(panel).single { toolbar ->
+            toolbar.actionGroup.getChildren(null).any {
+                it.templatePresentation.text == GhStackBundle.message("panel.refresh")
+            }
+        }
+        val labels = panelToolbar.actionGroup.getChildren(null).map { it.templatePresentation.text }
+        assertFalse(
+            "Continue rebase should only appear in the current stack header",
+            labels.contains(GhStackBundle.message("panel.rebase.continue")),
+        )
+        assertFalse(
+            "Abort rebase should only appear in the current stack header",
+            labels.contains(GhStackBundle.message("panel.rebase.abort")),
+        )
+    }
+
     fun testRebaseVariantsStayInASingleDropdown() {
         val panel = GhStackPanel(project)
         Disposer.register(testRootDisposable, panel)
 
         val children = rebaseToolbars(panel).single().actionGroup.getChildren(null)
-        assertEquals("The rebase action should be a single toolbar button", 1, children.size)
-        val rebaseGroup = children.single() as? DefaultActionGroup
+        assertEquals("The header should show three buttons", 3, children.size)
+        val rebaseGroup = children.first() as? DefaultActionGroup
         assertNotNull("The rebase action should be a dropdown group", rebaseGroup)
         assertEquals(GhStackBundle.message("panel.rebase"), rebaseGroup!!.templatePresentation.text)
         assertTrue("The rebase group should open as a popup", rebaseGroup.isPopup)
