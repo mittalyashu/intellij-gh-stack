@@ -19,8 +19,14 @@ import git4idea.repo.GitRepositoryManager
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** A command result, plus the stash to restore when the command succeeded with changes stashed. */
-data class RebaseOutcome(val result: GhResult, val stashToRestore: StashRef? = null)
+/** The rebase result, plus where the stash created for it went. */
+data class RebaseOutcome(
+    val result: GhResult,
+    /** The stash to apply again after a successful rebase, or after a cancelled one whose cleanup succeeded. */
+    val stashToRestore: StashRef? = null,
+    /** The stash that must stay in place because the rebase failed or its cancellation cleanup could not abort. */
+    val stashKept: StashRef? = null,
+)
 
 /** Listener for [GhStackService.REPOSITORY_SELECTED]. */
 fun interface RepositorySelectionListener {
@@ -370,19 +376,103 @@ class GhStackService(private val project: Project) {
     fun rebase(vararg flags: String): GhResult = requireCli().rebase(*flags)
 
     /**
-     * Stashes local changes (including untracked files), runs the rebase, and reports the stash to restore
-     * only if the rebase succeeded. After a failed rebase (e.g. a conflict) the stash is kept and the error mentions it.
+     * Runs `gh stack rebase` while polling [isCancelled]. A cancelled cascade is aborted when this command created
+     * gh-stack's rebase journal, so the original branch refs are restored; the returned result is still
+     * [GhResult.cancelled], with the abort error appended when the cleanup failed. Must not run on the EDT.
      */
-    fun rebaseWithStash(vararg flags: String): RebaseOutcome {
-        val repository = selectedRepository() ?: error("This project is not under Git.")
-        return withStash(
-            repository,
-            GhStackBundle.message("stash.name"),
-            GhStackBundle.message("stash.kept.hint"),
-        ) {
-            rebase(*flags)
+    fun rebaseCancellable(isCancelled: () -> Boolean, vararg flags: String): GhResult =
+        runCancellableRebase(isCancelled, flags.toList()).result
+
+    /**
+     * Stashes local changes (including untracked files), runs the rebase, and reports where the stash went: it is
+     * restored after a successful rebase, and kept after a failed one (e.g. a conflict) with the error mentioning it.
+     */
+    fun rebaseWithStash(vararg flags: String): RebaseOutcome =
+        stashThenRebase(flags) { RebaseRun(rebase(*it)) }
+
+    /**
+     * Cancellable variant of [rebaseWithStash]. On a cancellation the cascade is aborted when this command created
+     * gh-stack's rebase journal; the stash is then restored unless that abort failed, in which case it is kept and
+     * both errors are reported. Must not run on the EDT.
+     */
+    fun rebaseWithStashCancellable(isCancelled: () -> Boolean, vararg flags: String): RebaseOutcome =
+        stashThenRebase(flags) { runCancellableRebase(isCancelled, it.toList()) }
+
+    /**
+     * A finished rebase plus whether a cancellation cleanup failed to abort the cascade. A failed abort means the
+     * working tree is still mid-rebase, so the stash must not be applied into it.
+     */
+    private data class RebaseRun(val result: GhResult, val abortFailed: Boolean = false)
+
+    private fun stashThenRebase(
+        flags: Array<out String>,
+        run: (Array<out String>) -> RebaseRun,
+    ): RebaseOutcome {
+        val repo = selectedRepository() ?: error("This project is not under Git.")
+        val message = GhStackBundle.message("stash.name")
+        val headBefore = git.stashHead(repo)
+        git.stashLocalChanges(repo, message)?.let { stashError ->
+            return RebaseOutcome(GhResult(1, "", stashError))
+        }
+        val stash = git.stashHead(repo)
+            ?.takeIf { it != headBefore }
+            ?.let { StashRef(it, message) }
+
+        val rebase = run(flags)
+        val result = rebase.result
+        if (stash == null) return RebaseOutcome(result)
+        return when (decideStashRestore(result.succeeded, result.cancelled, rebase.abortFailed)) {
+            StashRestore.RESTORE -> RebaseOutcome(result, stashToRestore = stash)
+            StashRestore.KEEP -> RebaseOutcome(
+                result.copy(stderr = withStashKeptHint(result.errorText(), message)),
+                stashKept = stash,
+            )
         }
     }
+
+    /**
+     * Runs a cancellable rebase and, if it was cancelled, aborts the journal this command created. The abort runs
+     * after [GhCli.rebaseCancellable] has waited for the killed process tree to exit, which releases gh-stack's
+     * `flock`ed operation lock.
+     */
+    private fun runCancellableRebase(isCancelled: () -> Boolean, flags: List<String>): RebaseRun {
+        val repo = selectedRepository() ?: error("This project is not under Git.")
+        val journal = resolveGhStackRebaseStateFile(repo.root.toNioPath())
+        val journalBefore = Files.exists(journal)
+        val result = requireCli().rebaseCancellable(isCancelled, *flags.toTypedArray())
+        if (!result.cancelled) return RebaseRun(result)
+        if (!shouldAbortCancelledRebase(journalBefore, Files.exists(journal), isRebasePaused(repo))) {
+            return RebaseRun(result)
+        }
+
+        val abort = rebaseAbort()
+        val abortFailed = when {
+            abort.succeeded -> false
+            // gh-stack found no journal to abort. That is a clean no-op only when no rebase is paused; a pause it
+            // does not own means the stash must not be applied into that tree.
+            isNoRebaseInProgress(abort) -> isRebasePaused(repo)
+            else -> true
+        }
+        if (!abortFailed) return RebaseRun(result)
+        val abortError = if (isNoRebaseInProgress(abort)) {
+            GhStackBundle.message("error.rebase.abort.incomplete")
+        } else {
+            abort.errorText()
+        }
+        return RebaseRun(
+            result.copy(stderr = "$abortError\n\n${result.errorText()}"),
+            abortFailed = true,
+        )
+    }
+
+    /** Refreshes git4idea's cached repository state before reading the pause flag. Must not run on the EDT. */
+    private fun isRebasePaused(repo: GitRepository): Boolean {
+        repo.update()
+        return repo.isRebaseInProgress
+    }
+
+    private fun withStashKeptHint(error: String, message: String): String =
+        "$error\n\n${GhStackBundle.message("stash.kept.hint", message)}"
 
     /**
      * Stashes local changes (including untracked files), runs [command], and reports the stash to restore only if
