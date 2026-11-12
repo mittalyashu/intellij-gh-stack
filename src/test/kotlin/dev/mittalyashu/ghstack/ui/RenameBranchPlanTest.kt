@@ -4,6 +4,7 @@ import com.github.mittalyashu.ghstack.GhStackBundle
 import com.github.mittalyashu.ghstack.model.PullRequestRef
 import com.github.mittalyashu.ghstack.model.StackLayer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RenameBranchPlanTest {
@@ -39,6 +40,23 @@ class RenameBranchPlanTest {
 
         assertEquals(listOf("auth", "api-v2", "ui"), plan.branches)
         assertEquals("gh stack init --base main auth api-v2 ui", plan.initCommand)
+    }
+
+    @Test
+    fun typingUpdatesTheCommandsButNotTheDescription() {
+        val initial = buildRenameBranchPreview("auth", "auth-v2", "main", listOf("auth", "api"))
+        val edited = buildRenameBranchPreview("auth", "auth-v2-2", "main", listOf("auth", "api"))
+
+        assertEquals("The description must not change while typing", initial.description, edited.description)
+        assertEquals(renameBranchDialogDescription("auth"), initial.description)
+        assertEquals(
+            "gh stack unstack --local\n" +
+                "git branch -m auth auth-v2\n" +
+                "git branch --unset-upstream auth-v2\n" +
+                "gh stack init --base main auth-v2 api",
+            initial.commandsText,
+        )
+        assertTrue(edited.commandsText.contains("git branch -m auth auth-v2-2"))
     }
 
     @Test

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the **Rename branch** dialog's command preview steady while typing: it updates without re-wrapping the description or resizing on every keystroke
 - Stop using the deprecated `Disposer.isDisposed` API in the **Stack** and **Console** panels
 
 ## [0.1.0]

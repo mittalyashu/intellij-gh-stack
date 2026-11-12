@@ -3,7 +3,6 @@ package com.github.mittalyashu.ghstack.ui
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
-import com.intellij.openapi.util.text.StringUtil
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.panel
@@ -14,10 +13,11 @@ import com.github.mittalyashu.ghstack.model.StackLayer
 import git4idea.validators.GitRefNameValidator
 import java.awt.Font
 import javax.swing.JComponent
-import javax.swing.JEditorPane
 import javax.swing.SwingUtilities
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+
+private const val COMMAND_COLUMNS = 48
 
 /** The `git` and `gh stack` commands that rename a layer's branch and re-initialize its stack. */
 internal data class RenameBranchPlan(
@@ -46,6 +46,35 @@ internal fun buildRenameBranchPlan(
     trunk = trunk,
     branches = branches.map { if (it == oldName) newName else it },
 )
+
+/**
+ * The preview under the name field. Only [commands] follow the typed name; [description] stays fixed, so typing never
+ * re-wraps it and makes the dialog flicker.
+ */
+internal data class RenameBranchPreview(
+    val description: String,
+    val commands: List<String>,
+) {
+    val commandsText: String get() = commands.joinToString("\n")
+    val commandRows: Int get() = commands.sumOf { it.length / COMMAND_COLUMNS + 1 }
+}
+
+/** Builds the preview for renaming [oldName] to [newName]. */
+internal fun buildRenameBranchPreview(
+    oldName: String,
+    newName: String,
+    trunk: String,
+    branches: List<String>,
+): RenameBranchPreview {
+    val plan = buildRenameBranchPlan(oldName, newName, trunk, branches)
+    return RenameBranchPreview(
+        description = renameBranchDialogDescription(oldName),
+        commands = plan.commands,
+    )
+}
+
+internal fun renameBranchDialogDescription(oldName: String): String =
+    GhStackBundle.message("dialog.rename.branch.description", oldName)
 
 /**
  * The popup description for the rename action: renaming a branch with a pull request closes that pull request on
@@ -80,7 +109,6 @@ internal class RenameBranchDialog(
         font = Font(Font.MONOSPACED, Font.PLAIN, font.size)
         border = JBUI.Borders.empty()
     }
-    private var descriptionComponent: JEditorPane? = null
 
     init {
         title = GhStackBundle.message("dialog.rename.branch.title")
@@ -106,7 +134,7 @@ internal class RenameBranchDialog(
             cell(nameField)
         }
         row {
-            descriptionComponent = comment("").component
+            comment(renameBranchDialogDescription(oldName))
         }
         row {
             cell(commandsArea)
@@ -134,14 +162,14 @@ internal class RenameBranchDialog(
     private fun updatePreview() {
         if (isDisposed) return
         val proposed = cleanedName().ifEmpty { GhStackBundle.message("dialog.rename.branch.placeholder") }
-        descriptionComponent?.text = StringUtil.escapeXmlEntities(
-            GhStackBundle.message("dialog.rename.branch.description", oldName, proposed),
-        )
-        val commands = buildRenameBranchPlan(oldName, proposed, trunk, branches).commands
-        commandsArea.text = commands.joinToString("\n")
-        // Grow the code block with wrapped command lines so a long branch list is never clipped.
-        commandsArea.rows = commands.sumOf { it.length / COMMAND_COLUMNS + 1 }
-        commandsArea.revalidate()
+        val preview = buildRenameBranchPreview(oldName, proposed, trunk, branches)
+        if (commandsArea.text != preview.commandsText) commandsArea.text = preview.commandsText
+        // Grow the code block with wrapped command lines so a long branch list is never clipped. Re-laying the dialog
+        // out on every keystroke makes the preview flicker, so only resize when the wrapped line count really changes.
+        if (commandsArea.rows != preview.commandRows) {
+            commandsArea.rows = preview.commandRows
+            commandsArea.revalidate()
+        }
     }
 
     // The document cannot be modified from inside a document listener, so defer the cleanup to the EDT.
@@ -153,9 +181,5 @@ internal class RenameBranchDialog(
             nameField.text = fixed
             nameField.caretPosition = caret
         }
-    }
-
-    private companion object {
-        private const val COMMAND_COLUMNS = 48
     }
 }
