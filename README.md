@@ -25,9 +25,10 @@ The plugin talks to `gh` in the selected Git repository: the repository of the f
 - Visual view of the current stack as a commit graph (`gh stack view --json`)
 - Add a branch on top of the stack (`gh stack add`)
 - Check out a layer (`gh stack checkout <branch>`)
+- Rename a layer's branch from its context menu, stashing uncommitted changes around the re-initialization like a rebase, while the other layers and their pull requests stay as they are
 - Rebase the stack (`gh stack rebase`, with `--upstack`, `--downstack`, `--no-trunk`), plus continue / abort
 - Rebase from a specific layer upward by right-clicking it in the stack list
-- Optionally stash uncommitted changes and untracked files around a rebase and restore them on success (Settings | Tools | GH Stack: ask / always / never)
+- Optionally stash uncommitted changes and untracked files around a rebase or branch rename and restore them on success (Settings | Tools | GH Stack: ask / always / never)
 - Prompt to enable `git rerere` before a stack is initialized or rebased, so repeated conflict resolutions are reused
 - Switch among locally tracked stacks from the **All stacks** column beside the current stack (reads `<git-common-dir>/gh-stack`, then `gh stack checkout`)
 - Prune a dangling local stack from the **All stacks** context menu when all of its branches are gone, so merged stacks stop lingering in local tracking

@@ -47,6 +47,22 @@ class GitService(private val project: Project) {
     fun deleteBranch(repository: GitRepository, name: String): Boolean =
         runChecked(repository, GitCommand.BRANCH, "-D", name)
 
+    /** Renames the local branch [oldName] to [newName]. Returns the git error message, or null on success. */
+    fun renameBranch(repository: GitRepository, oldName: String, newName: String): String? {
+        val result = run(repository, GitCommand.BRANCH, "-m", oldName, newName)
+        if (result.success()) return null
+        val message = result.errorOutputAsJoinedString.ifBlank { "git branch -m failed" }
+        log.warn("git branch -m $oldName $newName failed: $message")
+        return message
+    }
+
+    /**
+     * Drops [branch]'s upstream. `git branch -m` keeps `branch.<new>.merge` pointing at the old remote branch, so
+     * a plain `git push` would still target the old name. No-op (returns false) when [branch] has none.
+     */
+    fun unsetUpstream(repository: GitRepository, branch: String): Boolean =
+        run(repository, GitCommand.BRANCH, "--unset-upstream", branch).success()
+
     /**
      * True when `gh stack rebase` would refuse to run. Mirrors gh-stack's own check
      * (`git status --porcelain --untracked-files=all`), so untracked files count.

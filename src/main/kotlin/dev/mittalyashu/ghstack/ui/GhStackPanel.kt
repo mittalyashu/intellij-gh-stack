@@ -46,12 +46,12 @@ import com.github.mittalyashu.ghstack.model.TrackedStacks
 import com.github.mittalyashu.ghstack.service.GhStackService
 import com.github.mittalyashu.ghstack.service.GitService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
-import com.github.mittalyashu.ghstack.service.RebaseAction
 import com.github.mittalyashu.ghstack.service.RepositoryChoice
 import com.github.mittalyashu.ghstack.service.RepositorySelectionListener
 import com.github.mittalyashu.ghstack.service.RerereAction
-import com.github.mittalyashu.ghstack.service.decideRebaseAction
+import com.github.mittalyashu.ghstack.service.StashAction
 import com.github.mittalyashu.ghstack.service.decideRerereAction
+import com.github.mittalyashu.ghstack.service.decideStashAction
 import com.github.mittalyashu.ghstack.service.stashChoiceFromExitCode
 import com.github.mittalyashu.ghstack.settings.GhStackSettings
 import com.github.mittalyashu.ghstack.settings.StashMode
@@ -105,6 +105,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     private var syncingRepository = false
     private var runningTasks = 0
     private var displayedRoot: Path? = null
+    private var currentView: StackView? = null
+    private var localBranchNames: Set<String> = emptySet()
 
     /** Set in [dispose]; guards callbacks that were queued before the panel was disposed. */
     @Volatile
@@ -218,6 +220,8 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     /** Drops rows that belong to a repository the panel no longer targets, so they can't act on the new one. */
     private fun invalidateRows() {
         displayedRoot = null
+        currentView = null
+        localBranchNames = emptySet()
         listModel.clear()
         status.text = GhStackBundle.message("status.loading")
         list.emptyText.text = GhStackBundle.message("status.loading")
@@ -338,6 +342,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun render(result: StackLoadResult?, tracked: Result<TrackedStacks>?, localBranches: Set<String>) {
         listModel.clear()
+        localBranchNames = localBranches
         var view: StackView? = null
         when (result) {
             null -> {
@@ -364,6 +369,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
                 list.emptyText.text = result.message
             }
         }
+        currentView = view
         allStacksPanel.update(tracked, view, localBranches)
         actionToolbar.updateActionsAsync()
     }
@@ -408,6 +414,21 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         })
         group.addSeparator()
         group.add(copyBranchNameAction)
+        group.addSeparator()
+        val layer = selectedLayer()
+        group.add(object : TooltipAction(
+            GhStackBundle.message("panel.rename.branch"),
+            renameBranchDescription(layer),
+            icon = AllIcons.Actions.Edit,
+        ) {
+            override fun actionPerformed(e: AnActionEvent) = renameSelectedBranch()
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                // Renaming a branch with a pull request closes that pull request on GitHub, so the menu item is
+                // disabled and its description explains the consequence instead.
+                e.presentation.isEnabled = layer != null && layer.pr == null
+            }
+        })
         return group
     }
 
@@ -533,6 +554,28 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         }
     }
 
+    private fun renameSelectedBranch() {
+        val layer = selectedLayer() ?: return
+        if (layer.pr != null) return
+        val view = currentView ?: return
+        val branches = view.branches.map { it.name }
+        val newName = RenameBranchDialog(
+            project = project,
+            oldName = layer.name,
+            trunk = view.trunk,
+            branches = branches,
+            existingBranches = localBranchNames,
+        ).showAndGetBranchName() ?: return
+        runTask(GhStackBundle.message("progress.rename")) {
+            val stash = stashBefore(StashPrompt.RENAME) ?: return@runTask null
+            if (stash) {
+                ghstack.renameLayerBranchWithStash(layer.name, newName, view.trunk, branches)
+            } else {
+                RebaseOutcome(ghstack.renameLayerBranch(layer.name, newName, view.trunk, branches))
+            }
+        }
+    }
+
     private fun initStack() {
         val name = Messages.showInputDialog(
             project,
@@ -558,16 +601,24 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun runRebase(args: List<String>) {
         runTask(GhStackBundle.message("progress.rebase")) {
-            val settings = GhStackSettings.getInstance()
-            val dirty = ghstack.selectedRepository()?.let(git::isDirty) == true
-            val stash = when (decideRebaseAction(settings.stashMode, dirty)) {
-                RebaseAction.RUN -> false
-                RebaseAction.STASH -> true
-                RebaseAction.PROMPT -> askToStash(settings) ?: return@runTask null
-            }
+            val stash = stashBefore(StashPrompt.REBASE) ?: return@runTask null
             ensureRerere()
             val flags = args.toTypedArray()
             if (stash) ghstack.rebaseWithStash(*flags) else RebaseOutcome(ghstack.rebase(*flags))
+        }
+    }
+
+    /**
+     * Whether to stash local changes before a stack operation, following the configured [StashMode]. Returns null
+     * when the user cancels the prompt. Call from a background thread.
+     */
+    private fun stashBefore(prompt: StashPrompt): Boolean? {
+        val settings = GhStackSettings.getInstance()
+        val dirty = ghstack.selectedRepository()?.let(git::isDirty) == true
+        return when (decideStashAction(settings.stashMode, dirty)) {
+            StashAction.RUN -> false
+            StashAction.STASH -> true
+            StashAction.PROMPT -> askToStash(settings, prompt)
         }
     }
 
@@ -625,19 +676,19 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     /**
-     * Returns whether to stash, or null when the rebase was cancelled. Persists the choice when "remember" is
+     * Returns whether to stash, or null when the operation was cancelled. Persists the choice when "remember" is
      * ticked. Call from a background thread.
      */
-    private fun askToStash(settings: GhStackSettings): Boolean? {
+    private fun askToStash(settings: GhStackSettings, prompt: StashPrompt): Boolean? {
         var answer: Boolean? = null
         ApplicationManager.getApplication().invokeAndWait({
             var remember = false
             val choice = MessageDialogBuilder
                 .yesNoCancel(
                     GhStackBundle.message("dialog.stash.title"),
-                    GhStackBundle.message("dialog.stash.message"),
+                    GhStackBundle.message(prompt.messageKey),
                 )
-                .yesText(GhStackBundle.message("dialog.stash.yes"))
+                .yesText(GhStackBundle.message(prompt.yesKey))
                 .noText(GhStackBundle.message("dialog.stash.no"))
                 .cancelText(GhStackBundle.message("dialog.stash.cancel"))
                 .doNotAsk(object : DoNotAskOption.Adapter() {
@@ -750,6 +801,12 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     override fun dispose() {
         disposed = true
     }
+}
+
+/** The stash prompt wording for a stack operation. */
+private enum class StashPrompt(val messageKey: String, val yesKey: String) {
+    REBASE("dialog.stash.message", "dialog.stash.yes"),
+    RENAME("dialog.stash.rename.message", "dialog.stash.rename.yes"),
 }
 
 /** An entry in the panel's repository selector: auto (follow the current file) or a concrete repository. */

@@ -11,6 +11,7 @@
             <li>See the stack as a commit graph, with each layer's PR number, plus its merged / queued / needs-rebase status and the current branch</li>
             <li>Check out a specific layer</li>
             <li>Copy the selected branch name from the stack list with Ctrl/Command+C</li>
+            <li>Rename a layer's branch from its context menu and re-initialize the stack locally, keeping the other layers and their pull requests as they are</li>
             <li>Add a branch on top of the stack</li>
             <li>Initialize a new stack</li>
             <li>Rebase the stack (whole, upstack, downstack, or without trunk), then continue or abort</li>
