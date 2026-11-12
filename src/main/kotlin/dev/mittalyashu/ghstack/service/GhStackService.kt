@@ -19,7 +19,7 @@ import git4idea.repo.GitRepositoryManager
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The rebase result, plus the stash to restore when the rebase succeeded with changes stashed. */
+/** A command result, plus the stash to restore when the command succeeded with changes stashed. */
 data class RebaseOutcome(val result: GhResult, val stashToRestore: StashRef? = null)
 
 /** Listener for [GhStackService.REPOSITORY_SELECTED]. */
@@ -228,6 +228,40 @@ class GhStackService(private val project: Project) {
     ): GhResult {
         val repository = selectedRepository()
             ?: return failure(GhStackBundle.message("prune.error.no.repository"))
+        validateRename(repository, oldName, newName, branches)?.let { return it }
+        return performRename(repository, oldName, newName, trunk, branches)
+    }
+
+    /**
+     * Renames [oldName] to [newName] with local changes stashed first and restored on success, like a rebase.
+     * `gh stack init` checks out branches, so a dirty working tree can make the restructure fail partway.
+     * Must not run on the EDT.
+     */
+    fun renameLayerBranchWithStash(
+        oldName: String,
+        newName: String,
+        trunk: String,
+        branches: List<String>,
+    ): RebaseOutcome {
+        val repository = selectedRepository()
+            ?: return RebaseOutcome(failure(GhStackBundle.message("prune.error.no.repository")))
+        validateRename(repository, oldName, newName, branches)?.let { return RebaseOutcome(it) }
+        return withStash(
+            repository,
+            GhStackBundle.message("stash.name.rename"),
+            GhStackBundle.message("stash.kept.hint.rename"),
+        ) {
+            performRename(repository, oldName, newName, trunk, branches)
+        }
+    }
+
+    /** Returns a failure when the rename cannot start, or null when every branch is present and the name is free. */
+    private fun validateRename(
+        repository: GitRepository,
+        oldName: String,
+        newName: String,
+        branches: List<String>,
+    ): GhResult? {
         if (oldName !in branches) {
             return failure(GhStackBundle.message("rename.error.not.in.stack", oldName))
         }
@@ -244,7 +278,17 @@ class GhStackService(private val project: Project) {
         if (newName in localBranches) {
             return failure(GhStackBundle.message("rename.error.exists", newName))
         }
+        return null
+    }
 
+    /** Unstacks, renames, and re-initializes the stack. Validation must have passed already. */
+    private fun performRename(
+        repository: GitRepository,
+        oldName: String,
+        newName: String,
+        trunk: String,
+        branches: List<String>,
+    ): GhResult {
         val originalBranch = git.currentBranchName(repository)
         var renamed = false
         try {
@@ -331,21 +375,31 @@ class GhStackService(private val project: Project) {
      */
     fun rebaseWithStash(vararg flags: String): RebaseOutcome {
         val repository = selectedRepository() ?: error("This project is not under Git.")
-        val message = GhStackBundle.message("stash.name")
+        return withStash(
+            repository,
+            GhStackBundle.message("stash.name"),
+            GhStackBundle.message("stash.kept.hint"),
+        ) {
+            rebase(*flags)
+        }
+    }
+
+    /**
+     * Stashes local changes (including untracked files), runs [command], and reports the stash to restore only if
+     * the command succeeded. After a failure the stash is kept and the error mentions it.
+     */
+    private fun withStash(
+        repository: GitRepository,
+        message: String,
+        keptHint: String,
+        command: () -> GhResult,
+    ): RebaseOutcome {
         val headBefore = git.stashHead(repository)
         git.stashLocalChanges(repository, message)?.let { stashError ->
             return RebaseOutcome(GhResult(1, "", stashError))
         }
         val stash = git.stashHead(repository)?.takeIf { it != headBefore }
-
-        val result = rebase(*flags)
-        return when {
-            stash == null -> RebaseOutcome(result)
-            result.succeeded -> RebaseOutcome(result, StashRef(stash, message))
-            else -> RebaseOutcome(
-                result.copy(stderr = "${result.errorText()}\n\n${GhStackBundle.message("stash.kept.hint", message)}"),
-            )
-        }
+        return stashOutcome(command(), stash, message, keptHint)
     }
 
     fun rebaseContinue(): GhResult = requireCli().rebaseContinue()

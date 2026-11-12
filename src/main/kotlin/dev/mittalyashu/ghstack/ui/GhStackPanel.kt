@@ -46,12 +46,12 @@ import com.github.mittalyashu.ghstack.model.TrackedStacks
 import com.github.mittalyashu.ghstack.service.GhStackService
 import com.github.mittalyashu.ghstack.service.GitService
 import com.github.mittalyashu.ghstack.service.RebaseOutcome
-import com.github.mittalyashu.ghstack.service.RebaseAction
 import com.github.mittalyashu.ghstack.service.RepositoryChoice
 import com.github.mittalyashu.ghstack.service.RepositorySelectionListener
 import com.github.mittalyashu.ghstack.service.RerereAction
-import com.github.mittalyashu.ghstack.service.decideRebaseAction
+import com.github.mittalyashu.ghstack.service.StashAction
 import com.github.mittalyashu.ghstack.service.decideRerereAction
+import com.github.mittalyashu.ghstack.service.decideStashAction
 import com.github.mittalyashu.ghstack.service.stashChoiceFromExitCode
 import com.github.mittalyashu.ghstack.settings.GhStackSettings
 import com.github.mittalyashu.ghstack.settings.StashMode
@@ -566,8 +566,13 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
             branches = branches,
             existingBranches = localBranchNames,
         ).showAndGetBranchName() ?: return
-        runGh(GhStackBundle.message("progress.rename")) {
-            ghstack.renameLayerBranch(layer.name, newName, view.trunk, branches)
+        runTask(GhStackBundle.message("progress.rename")) {
+            val stash = stashBefore(StashPrompt.RENAME) ?: return@runTask null
+            if (stash) {
+                ghstack.renameLayerBranchWithStash(layer.name, newName, view.trunk, branches)
+            } else {
+                RebaseOutcome(ghstack.renameLayerBranch(layer.name, newName, view.trunk, branches))
+            }
         }
     }
 
@@ -596,16 +601,24 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     private fun runRebase(args: List<String>) {
         runTask(GhStackBundle.message("progress.rebase")) {
-            val settings = GhStackSettings.getInstance()
-            val dirty = ghstack.selectedRepository()?.let(git::isDirty) == true
-            val stash = when (decideRebaseAction(settings.stashMode, dirty)) {
-                RebaseAction.RUN -> false
-                RebaseAction.STASH -> true
-                RebaseAction.PROMPT -> askToStash(settings) ?: return@runTask null
-            }
+            val stash = stashBefore(StashPrompt.REBASE) ?: return@runTask null
             ensureRerere()
             val flags = args.toTypedArray()
             if (stash) ghstack.rebaseWithStash(*flags) else RebaseOutcome(ghstack.rebase(*flags))
+        }
+    }
+
+    /**
+     * Whether to stash local changes before a stack operation, following the configured [StashMode]. Returns null
+     * when the user cancels the prompt. Call from a background thread.
+     */
+    private fun stashBefore(prompt: StashPrompt): Boolean? {
+        val settings = GhStackSettings.getInstance()
+        val dirty = ghstack.selectedRepository()?.let(git::isDirty) == true
+        return when (decideStashAction(settings.stashMode, dirty)) {
+            StashAction.RUN -> false
+            StashAction.STASH -> true
+            StashAction.PROMPT -> askToStash(settings, prompt)
         }
     }
 
@@ -663,19 +676,19 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     /**
-     * Returns whether to stash, or null when the rebase was cancelled. Persists the choice when "remember" is
+     * Returns whether to stash, or null when the operation was cancelled. Persists the choice when "remember" is
      * ticked. Call from a background thread.
      */
-    private fun askToStash(settings: GhStackSettings): Boolean? {
+    private fun askToStash(settings: GhStackSettings, prompt: StashPrompt): Boolean? {
         var answer: Boolean? = null
         ApplicationManager.getApplication().invokeAndWait({
             var remember = false
             val choice = MessageDialogBuilder
                 .yesNoCancel(
                     GhStackBundle.message("dialog.stash.title"),
-                    GhStackBundle.message("dialog.stash.message"),
+                    GhStackBundle.message(prompt.messageKey),
                 )
-                .yesText(GhStackBundle.message("dialog.stash.yes"))
+                .yesText(GhStackBundle.message(prompt.yesKey))
                 .noText(GhStackBundle.message("dialog.stash.no"))
                 .cancelText(GhStackBundle.message("dialog.stash.cancel"))
                 .doNotAsk(object : DoNotAskOption.Adapter() {
@@ -788,6 +801,12 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     override fun dispose() {
         disposed = true
     }
+}
+
+/** The stash prompt wording for a stack operation. */
+private enum class StashPrompt(val messageKey: String, val yesKey: String) {
+    REBASE("dialog.stash.message", "dialog.stash.yes"),
+    RENAME("dialog.stash.rename.message", "dialog.stash.rename.yes"),
 }
 
 /** An entry in the panel's repository selector: auto (follow the current file) or a concrete repository. */
