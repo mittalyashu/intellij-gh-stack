@@ -48,5 +48,7 @@
                 anchor="bottom"
                 icon="/icons/ghStack.svg"
                 canCloseContents="false"/>
+
+        <notificationGroup id="GH Stack" displayType="BALLOON"/>
     </extensions>
 </idea-plugin>
