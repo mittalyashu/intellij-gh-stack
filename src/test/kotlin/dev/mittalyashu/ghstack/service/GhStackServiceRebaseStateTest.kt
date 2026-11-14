@@ -47,4 +47,26 @@ class GhStackServiceRebaseStateTest : BasePlatformTestCase() {
         assertFalse(outcome.rolledBack)
         assertFalse(outcome.cleanupFailed)
     }
+
+    fun testCancelWithNoRunningRebaseIsANoOp() {
+        val service = project.getService(GhStackService::class.java)
+
+        service.cancelRebase()
+
+        assertFalse(service.isRebaseRunning())
+        assertFalse(service.isRebaseCancelling())
+    }
+
+    fun testACancelledRebaseDoesNotCancelTheNextOne() {
+        val service = project.getService(GhStackService::class.java)
+        service.startRebase(EmptyProgressIndicator())
+        service.cancelRebase()
+        service.finishRebase()
+
+        val isCancelled = checkNotNull(service.startRebase(EmptyProgressIndicator()))
+
+        assertFalse(service.isRebaseCancelling())
+        assertFalse(isCancelled())
+        service.finishRebase()
+    }
 }

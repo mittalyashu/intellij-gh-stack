@@ -1,5 +1,6 @@
 package com.github.mittalyashu.ghstack.service
 
+import com.github.mittalyashu.ghstack.GhStackBundle
 import com.github.mittalyashu.ghstack.cli.GhResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -61,10 +62,30 @@ class CancelDecisionTest {
     }
 
     @Test
+    fun noRebaseInProgressIsRecognisedOnStdoutToo() {
+        val result = GhResult(exitCode = 1, stdout = "no rebase in progress", stderr = "")
+        assertTrue(isNoRebaseInProgress(result))
+    }
+
+    @Test
     fun otherAbortFailuresAreNotSwallowed() {
         val result = GhResult(exitCode = 1, stdout = "", stderr = "could not restore branches: locked")
         assertFalse(isNoRebaseInProgress(result))
         assertFalse(isNoRebaseInProgress(GhResult(exitCode = 0, stdout = "no rebase in progress", stderr = "")))
+    }
+
+    @Test
+    fun noOpAbortExplainsTheIncompleteCleanup() {
+        val abort = GhResult(exitCode = 1, stdout = "", stderr = "Error: no rebase in progress")
+
+        assertEquals(GhStackBundle.message("error.rebase.abort.incomplete"), abortCleanupError(abort))
+    }
+
+    @Test
+    fun failedAbortKeepsTheGhError() {
+        val abort = GhResult(exitCode = 1, stdout = "", stderr = "could not restore branches: locked")
+
+        assertEquals("could not restore branches: locked", abortCleanupError(abort))
     }
 
     @Test

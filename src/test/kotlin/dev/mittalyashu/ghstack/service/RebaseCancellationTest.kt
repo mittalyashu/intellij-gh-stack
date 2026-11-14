@@ -37,4 +37,17 @@ class RebaseCancellationTest {
         assertTrue(cancellation.isCancelled)
         assertFalse(cancellation.cancelRequested)
     }
+
+    @Test
+    fun `cancelling twice stays cancelled`() {
+        // Both the popup and the toolbar can request cancellation; the signal simply stays set.
+        var indicatorCancelled = false
+        val cancellation = RebaseCancellation({ indicatorCancelled = true }, { indicatorCancelled })
+
+        cancellation.cancel()
+        cancellation.cancel()
+
+        assertTrue(cancellation.cancelRequested)
+        assertTrue(cancellation.isCancelled)
+    }
 }
