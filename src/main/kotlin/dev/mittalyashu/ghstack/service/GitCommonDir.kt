@@ -7,6 +7,12 @@ import java.nio.file.Path
 internal const val GH_STACK_STATE_FILE = "gh-stack"
 
 /**
+ * The name of gh-stack's in-flight rebase journal, written next to the catalog before a rebase cascades. A present
+ * journal is what `gh stack rebase --abort` reads to restore every original branch ref.
+ */
+internal const val GH_STACK_REBASE_STATE_FILE = "gh-stack-rebase-state"
+
+/**
  * Resolves gh-stack's catalog path, `<common-dir>/gh-stack`, for the repository checked out at [gitRoot].
  *
  * `gh stack` stores its catalog in Git's common directory, which is only `<root>/.git` for a plain clone. In a linked
@@ -55,6 +61,17 @@ internal fun resolveGhStackStateFile(
     isDirectory: (Path) -> Boolean,
     readText: (Path) -> String?,
 ): Path = resolveGitCommonDir(gitRoot, isDirectory, readText).resolve(GH_STACK_STATE_FILE)
+
+/** The path of gh-stack's in-flight rebase journal for [gitRoot], using the real filesystem. */
+internal fun resolveGhStackRebaseStateFile(gitRoot: Path): Path =
+    resolveGitCommonDir(gitRoot).resolve(GH_STACK_REBASE_STATE_FILE)
+
+/** The path of gh-stack's rebase journal for [gitRoot], with injectable filesystem accessors for testing. */
+internal fun resolveGhStackRebaseStateFile(
+    gitRoot: Path,
+    isDirectory: (Path) -> Boolean,
+    readText: (Path) -> String?,
+): Path = resolveGitCommonDir(gitRoot, isDirectory, readText).resolve(GH_STACK_REBASE_STATE_FILE)
 
 /** The `gitdir: <path>` target of a `.git` pointer file, or null when the content is not a pointer. */
 private fun parseGitDirPointer(content: String): String? =

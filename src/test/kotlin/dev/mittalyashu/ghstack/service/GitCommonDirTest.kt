@@ -58,4 +58,14 @@ class GitCommonDirTest {
             resolveGhStackStateFile(root, dirs::contains, files::get),
         )
     }
+
+    @Test
+    fun rebaseJournalLivesNextToTheCatalog() {
+        files[root.resolve(".git")] = "gitdir: /main/.git/worktrees/wt"
+        files[Path.of("/main/.git/worktrees/wt/commondir")] = "../.."
+        assertEquals(
+            Path.of("/main/.git/gh-stack-rebase-state"),
+            resolveGhStackRebaseStateFile(root, dirs::contains, files::get),
+        )
+    }
 }
