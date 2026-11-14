@@ -8,8 +8,10 @@ data class GhResult(
     val stderr: String,
     /** The timeout that stopped the process, or null when it finished on its own. */
     val timeoutMs: Int? = null,
+    /** True when the user stopped the process before it finished. */
+    val cancelled: Boolean = false,
 ) {
-    val succeeded: Boolean get() = exitCode == 0
+    val succeeded: Boolean get() = exitCode == 0 && !cancelled
 
     val timedOut: Boolean get() = timeoutMs != null
 
@@ -21,6 +23,7 @@ data class GhResult(
         return when {
             captured != null -> captured
             timeout != null -> GhStackBundle.message("error.timed.out", timeout / 1000)
+            cancelled -> GhStackBundle.message("error.cancelled")
             else -> "Command failed with exit code $exitCode"
         }
     }

@@ -48,4 +48,19 @@ class GhCliTimeoutTest {
         assertEquals(3, result.exitCode)
         assertEquals("rebase conflict", result.errorText())
     }
+
+    @Test
+    fun `cancelled output maps to a cancelled result`() {
+        val output = ProcessOutput()
+        output.exitCode = 137
+        output.appendStderr("partial output")
+        output.setCancelled()
+
+        val result = toGhResult(output, 10 * 60_000)
+
+        assertTrue(result.cancelled)
+        assertFalse(result.timedOut)
+        assertEquals(137, result.exitCode)
+        assertEquals("partial output", result.errorText())
+    }
 }
