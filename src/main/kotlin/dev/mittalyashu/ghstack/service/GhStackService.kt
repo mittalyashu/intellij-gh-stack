@@ -432,7 +432,23 @@ class GhStackService(private val project: Project) {
 
     fun checkout(target: String): GhResult = requireCli().checkout(target)
 
-    fun initStack(branchName: String): GhResult = requireCli().init(branchName)
+    fun initStack(branchName: String, base: String? = null): GhResult =
+        requireCli().init(listOf(branchName), base)
+
+    fun unstackLocal(): GhResult = requireCli().unstackLocal()
+
+    /** Branch list, default trunk and tracked stacks, for the init dialog to prefill and validate against. */
+    fun loadInitStackOptions(): InitStackOptions {
+        val repository = selectedRepository()
+        val localBranches = repository?.let { git.localBranchNames(it).sorted() }.orEmpty()
+        val current = repository?.let { git.currentBranchName(it) }
+        return InitStackOptions(
+            localBranches = localBranches,
+            currentBranch = current,
+            defaultBase = defaultBaseBranch(localBranches, current, repository?.let { git.remoteDefaultBranch(it) }),
+            trackedStacks = loadTrackedStacks().getOrNull()?.stacks.orEmpty(),
+        )
+    }
 
     fun rebase(vararg flags: String): GhResult = requireCli().rebase(*flags)
 
