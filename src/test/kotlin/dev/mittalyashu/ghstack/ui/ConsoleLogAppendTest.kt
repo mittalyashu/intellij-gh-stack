@@ -1,16 +1,12 @@
 package com.github.mittalyashu.ghstack.ui
 
-import com.github.mittalyashu.ghstack.cli.GhCommandRun
 import com.github.mittalyashu.ghstack.service.GhCommandLogEntry
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConsoleLogAppendTest {
-    private val entry = GhCommandLogEntry(
-        sequence = 2,
-        run = GhCommandRun(commandLine = "gh stack view", exitCode = 0, stdout = "", stderr = ""),
-    )
+    private val entry = GhCommandLogEntry.Started(sequence = 2, commandLine = "gh stack view")
 
     @Test
     fun `new entries are appended`() {

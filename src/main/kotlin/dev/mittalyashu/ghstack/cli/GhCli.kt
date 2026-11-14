@@ -19,14 +19,18 @@ data class GhCommandRun(
     val exitCode: Int,
     val stdout: String,
     val stderr: String,
+    /** True when the user stopped the process before it finished. */
+    val cancelled: Boolean = false,
 ) {
-    val succeeded: Boolean get() = exitCode == 0
+    val succeeded: Boolean get() = exitCode == 0 && !cancelled
 }
 
 class GhCli(
     private val workingDirectory: Path,
     private val configuredPath: () -> String = { GhStackSettings.getInstance().ghExecutablePath },
     private val onCommandRun: (GhCommandRun) -> Unit = {},
+    /** Called with the command line right before the process starts, so a long or cancelled run is visible. */
+    private val onCommandStart: (String) -> Unit = {},
 ) {
     private val log = Logger.getInstance(GhCli::class.java)
 
@@ -80,7 +84,9 @@ class GhCli(
     private fun run(timeoutMs: Int, vararg args: String): GhResult {
         val commandLine = when (val prepared = prepare(args)) {
             is PreparedCommand.Missing -> {
-                report("gh ${args.joinToString(" ")}", prepared.result)
+                val command = "gh ${args.joinToString(" ")}"
+                reportStart(command)
+                report(command, prepared.result)
                 return prepared.result
             }
 
@@ -88,6 +94,7 @@ class GhCli(
         }
 
         log.debug("Running: ${commandLine.commandLineString} in $workingDirectory")
+        reportStart(commandLine.commandLineString)
         val output: ProcessOutput = try {
             CapturingProcessHandler(commandLine).runProcess(timeoutMs)
         } catch (e: ExecutionException) {
@@ -111,7 +118,9 @@ class GhCli(
     private fun runCancellable(timeoutMs: Int, isCancelled: () -> Boolean, vararg args: String): GhResult {
         val commandLine = when (val prepared = prepare(args)) {
             is PreparedCommand.Missing -> {
-                report("gh ${args.joinToString(" ")}", prepared.result)
+                val command = "gh ${args.joinToString(" ")}"
+                reportStart(command)
+                report(command, prepared.result)
                 return prepared.result
             }
 
@@ -119,6 +128,7 @@ class GhCli(
         }
 
         log.debug("Running (cancellable): ${commandLine.commandLineString} in $workingDirectory")
+        reportStart(commandLine.commandLineString)
         val handler = try {
             CapturingProcessHandler(commandLine).apply {
                 // gh stack rebase spawns git children; kill the whole tree so a follow-up `--abort` cannot race a
@@ -186,6 +196,11 @@ class GhCli(
         return PreparedCommand.Ready(commandLine)
     }
 
+    private fun reportStart(commandLine: String) {
+        runCatching { onCommandStart(commandLine) }
+            .onFailure { log.warn("Could not report the start of the gh command", it) }
+    }
+
     private fun report(commandLine: String, result: GhResult) {
         runCatching {
             onCommandRun(
@@ -194,6 +209,7 @@ class GhCli(
                     exitCode = result.exitCode,
                     stdout = result.stdout,
                     stderr = result.stderr,
+                    cancelled = result.cancelled,
                 )
             )
         }.onFailure { log.warn("Could not report the gh command run", it) }

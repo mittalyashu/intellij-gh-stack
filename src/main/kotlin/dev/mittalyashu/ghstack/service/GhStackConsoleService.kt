@@ -21,10 +21,20 @@ class GhStackConsoleService(private val project: Project) {
     private val history = ArrayDeque<GhCommandLogEntry>()
     private var sequence = 0L
 
+    /** Records a command as started, so it is visible before its process finishes. */
+    fun recordStart(commandLine: String) {
+        recordEntry { sequence -> GhCommandLogEntry.Started(sequence, commandLine) }
+    }
+
+    /** Records a finished command with its exit code and output. */
     fun record(run: GhCommandRun) {
+        recordEntry { sequence -> GhCommandLogEntry.Finished(sequence, run) }
+    }
+
+    private fun recordEntry(build: (Long) -> GhCommandLogEntry) {
         if (GhStackSettings.getInstance().consoleVerbosity == ConsoleVerbosity.OFF) return
         synchronized(lock) {
-            val entry = GhCommandLogEntry(++sequence, run)
+            val entry = build(++sequence)
             history.addLast(entry)
             while (history.size > MAX_ENTRIES) {
                 history.removeFirst()
