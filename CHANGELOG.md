@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Move **Continue rebase** and **Abort rebase** into the **Current stack** header after the **Rebase stack** button, so the paused-rebase actions sit with the stack they rebase
 - Display branches in the **Current stack** area in stack order with the top branch at the top and the trunk branch at the bottom
 - Draw the **Current stack** branches as a commit graph, with a vertical lane and a node per branch, so the stack's flow from the trunk up to the top branch is visible at a glance
+- Initialize stack now opens a dialog to choose the trunk/base branch, adopt an existing local branch or name a new one, and unstack an existing stack first when the current branch is already part of one
 
 ### Fixed
 

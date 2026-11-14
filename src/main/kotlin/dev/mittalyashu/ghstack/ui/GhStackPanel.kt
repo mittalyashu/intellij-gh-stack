@@ -115,6 +115,10 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     @Volatile
     private var disposed = false
 
+    /** Set by a successful init so the refreshed list selects the branch that was just created. */
+    @Volatile
+    private var highlightBranch: String? = null
+
     private lateinit var actionToolbar: ActionToolbar
     private lateinit var rebaseToolbar: ActionToolbar
     private val copyBranchNameAction = object : TooltipAction(
@@ -382,9 +386,24 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
         }
         currentView = view
         allStacksPanel.update(tracked, view, localBranches)
+        highlightNewBranch(result)
         actionToolbar.updateActionsAsync()
         // The Current stack header owns the paused-rebase actions, so their visibility follows the same refresh.
         rebaseToolbar.updateActionsAsync()
+    }
+
+    /** Selects the branch just created by an init, so the new stack stands out after the refresh. */
+    private fun highlightNewBranch(result: StackLoadResult?) {
+        val branch = highlightBranch ?: return
+        if (result !is StackLoadResult.Loaded) return
+        highlightBranch = null
+        val index = (0 until listModel.size()).firstOrNull {
+            (listModel.getElementAt(it) as? StackRow.Layer)?.layer?.name == branch
+        }
+        if (index != null) {
+            list.selectedIndex = index
+            list.ensureIndexIsVisible(index)
+        }
     }
 
     private fun stackSummary(view: StackView): String {
@@ -621,20 +640,44 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
     }
 
     private fun initStack() {
-        val name = Messages.showInputDialog(
+        ProgressManager.getInstance().run(object : Task.Backgroundable(
             project,
-            GhStackBundle.message("dialog.init.prompt"),
-            GhStackBundle.message("dialog.init.title"),
-            Messages.getQuestionIcon(),
-            null,
-            null,
-            null,
-            GhStackBundle.message("dialog.init.description"),
-        )?.trim().orEmpty()
-        if (name.isEmpty()) return
+            GhStackBundle.message("progress.init.load"),
+            false,
+        ) {
+            override fun run(indicator: ProgressIndicator) {
+                val options = ghstack.loadInitStackOptions()
+                ApplicationManager.getApplication().invokeLater({
+                    if (disposed) return@invokeLater
+                    val dialog = InitStackDialog(project, options)
+                    if (dialog.showAndGet()) {
+                        runInit(dialog.request())
+                    }
+                }, ModalityState.any())
+            }
+        })
+    }
+
+    private fun runInit(request: InitStackRequest) {
         runTask(GhStackBundle.message("progress.init")) {
             ensureRerere()
-            RebaseOutcome(ghstack.initStack(name))
+            if (request.unstackFirst) {
+                val unstack = ghstack.unstackLocal()
+                if (!unstack.succeeded) return@runTask RebaseOutcome(unstack)
+            }
+            val result = ghstack.initStack(request.branch, request.base.ifEmpty { null })
+            if (result.succeeded) {
+                highlightBranch = request.branch
+                RebaseOutcome(result)
+            } else if (request.unstackFirst) {
+                RebaseOutcome(
+                    result.copy(
+                        stderr = "${result.errorText()}\n\n${GhStackBundle.message("dialog.init.unstack.lost")}",
+                    )
+                )
+            } else {
+                RebaseOutcome(result)
+            }
         }
     }
 
@@ -677,7 +720,7 @@ class GhStackPanel(private val project: Project) : JPanel(BorderLayout()), com.i
 
     /**
      * Ensures git rerere is available before a stack command that can conflict. Idempotent, so it is safe to
-     * call from both [initStack] and [rebase]; it no-ops once rerere is enabled or was declined. Mirrors
+     * call from both [runInit] and [runRebase]; it no-ops once rerere is enabled or was declined. Mirrors
      * `gh stack`'s own `ensureRerere`, which cannot run for plugin-driven commands because the CLI is invoked
      * non-interactively. Call from a background thread.
      */

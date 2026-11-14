@@ -35,6 +35,14 @@ class GitService(private val project: Project) {
         return result.output.firstOrNull()?.trim()?.takeUnless { it.isEmpty() || it == "HEAD" }
     }
 
+    /** The repository's default branch as named by `origin/HEAD`, or null when it is unset. */
+    fun remoteDefaultBranch(repository: GitRepository): String? {
+        val result = run(repository, GitCommand.REV_PARSE, "--abbrev-ref", "origin/HEAD")
+        if (!result.success()) return null
+        val name = result.output.firstOrNull()?.trim().orEmpty()
+        return name.removePrefix("origin/").takeIf { it.isNotEmpty() && it != "origin/HEAD" }
+    }
+
     /** Points [name] at [startPoint] without checking it out. */
     fun createBranch(repository: GitRepository, name: String, startPoint: String = "HEAD"): Boolean =
         runChecked(repository, GitCommand.BRANCH, name, startPoint)
