@@ -28,7 +28,7 @@ class CurrentStackHeaderTest : BasePlatformTestCase() {
         )
     }
 
-    fun testContinueAndAbortSitAfterRebaseInTheCurrentStackHeader() {
+    fun testCancelContinueAndAbortSitAfterRebaseInTheCurrentStackHeader() {
         val panel = GhStackPanel(project)
         Disposer.register(testRootDisposable, panel)
 
@@ -49,6 +49,7 @@ class CurrentStackHeaderTest : BasePlatformTestCase() {
         assertEquals(
             listOf(
                 GhStackBundle.message("panel.rebase"),
+                GhStackBundle.message("panel.rebase.cancel"),
                 GhStackBundle.message("panel.rebase.continue"),
                 GhStackBundle.message("panel.rebase.abort"),
             ),
@@ -81,7 +82,7 @@ class CurrentStackHeaderTest : BasePlatformTestCase() {
         Disposer.register(testRootDisposable, panel)
 
         val children = rebaseToolbars(panel).single().actionGroup.getChildren(null)
-        assertEquals("The header should show three buttons", 3, children.size)
+        assertEquals("The header should show four buttons", 4, children.size)
         val rebaseGroup = children.first() as? DefaultActionGroup
         assertNotNull("The rebase action should be a dropdown group", rebaseGroup)
         assertEquals(GhStackBundle.message("panel.rebase"), rebaseGroup!!.templatePresentation.text)

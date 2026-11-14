@@ -2,6 +2,7 @@ package com.github.mittalyashu.ghstack.service
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.util.concurrency.annotations.RequiresEdt
@@ -26,11 +27,20 @@ data class RebaseOutcome(
     val stashToRestore: StashRef? = null,
     /** The stash that must stay in place because the rebase failed or its cancellation cleanup could not abort. */
     val stashKept: StashRef? = null,
+    /** True when a cancelled rebase was aborted, restoring every original branch ref. */
+    val rolledBack: Boolean = false,
+    /** True when a cancelled rebase could not be aborted; [result] then carries the abort error. */
+    val cleanupFailed: Boolean = false,
 )
 
 /** Listener for [GhStackService.REPOSITORY_SELECTED]. */
 fun interface RepositorySelectionListener {
     fun repositorySelected()
+}
+
+/** Listener for [GhStackService.REBASE_STATE_CHANGED]. */
+fun interface RebaseStateListener {
+    fun rebaseStateChanged()
 }
 
 /**
@@ -45,6 +55,10 @@ class GhStackService(private val project: Project) {
         /** Published when the panel's repository selector changes, so every open panel stays in sync. */
         val REPOSITORY_SELECTED: Topic<RepositorySelectionListener> =
             Topic.create("GH Stack repository selected", RepositorySelectionListener::class.java)
+
+        /** Published when a cancellable rebase starts or finishes, so every open panel can refresh its toolbar. */
+        val REBASE_STATE_CHANGED: Topic<RebaseStateListener> =
+            Topic.create("GH Stack rebase state changed", RebaseStateListener::class.java)
     }
 
     /**
@@ -132,6 +146,53 @@ class GhStackService(private val project: Project) {
         } finally {
             pinnedRoot.set(previous)
         }
+    }
+
+    private val rebaseLock = Any()
+
+    /**
+     * The cancellable rebase started from a panel. Kept at project level so a Cancel action in another panel, or in
+     * this panel after it was recreated, can still stop the running rebase.
+     */
+    @Volatile
+    private var activeRebase: RebaseCancellation? = null
+
+    /** True while a cancellable stack rebase is running, including its cancellation cleanup. */
+    fun isRebaseRunning(): Boolean = activeRebase != null
+
+    /** True once a cancellation was requested; the Cancel action stays disabled until the rebase finishes. */
+    fun isRebaseCancelling(): Boolean = activeRebase?.isCancelled == true
+
+    /** Requests cancellation of the running rebase. The abort/stash cleanup still runs on the rebase's own thread. */
+    fun cancelRebase() {
+        activeRebase?.cancel()
+    }
+
+    /**
+     * Registers a cancellable rebase for [indicator] and returns the signal the CLI polls, or null when another
+     * panel already started one. A non-null result must be paired with [finishRebase] in a `finally` block.
+     * Call from the rebase's background thread.
+     */
+    fun startRebase(indicator: ProgressIndicator): (() -> Boolean)? {
+        val cancellation = RebaseCancellation({ indicator.cancel() }, { indicator.isCanceled })
+        synchronized(rebaseLock) {
+            if (activeRebase != null) return null
+            activeRebase = cancellation
+        }
+        publishRebaseState()
+        return { cancellation.isCancelled }
+    }
+
+    /** Clears the rebase registered by [startRebase], after its cancellation cleanup has finished. */
+    fun finishRebase() {
+        synchronized(rebaseLock) {
+            activeRebase = null
+        }
+        publishRebaseState()
+    }
+
+    private fun publishRebaseState() {
+        project.messageBus.syncPublisher(REBASE_STATE_CHANGED).rebaseStateChanged()
     }
 
     private fun gitRepositories(): List<GitRepository> =
@@ -380,8 +441,8 @@ class GhStackService(private val project: Project) {
      * gh-stack's rebase journal, so the original branch refs are restored; the returned result is still
      * [GhResult.cancelled], with the abort error appended when the cleanup failed. Must not run on the EDT.
      */
-    fun rebaseCancellable(isCancelled: () -> Boolean, vararg flags: String): GhResult =
-        runCancellableRebase(isCancelled, flags.toList()).result
+    fun rebaseCancellable(isCancelled: () -> Boolean, vararg flags: String): RebaseOutcome =
+        runCancellableRebase(isCancelled, flags.toList()).toOutcome()
 
     /**
      * Stashes local changes (including untracked files), runs the rebase, and reports where the stash went: it is
@@ -391,9 +452,11 @@ class GhStackService(private val project: Project) {
         stashThenRebase(flags) { RebaseRun(rebase(*it)) }
 
     /**
-     * Cancellable variant of [rebaseWithStash]. On a cancellation the cascade is aborted when this command created
-     * gh-stack's rebase journal; the stash is then restored unless that abort failed, in which case it is kept and
-     * both errors are reported. Must not run on the EDT.
+     * Stashes local changes (including untracked files), runs the cancellable rebase, and reports where the stash
+     * went: it is restored after a successful or cancelled rebase, and kept after a failed one (e.g. a conflict)
+     * with the error mentioning it. On a cancellation the cascade is aborted when this command created gh-stack's
+     * rebase journal; the stash is then restored unless that abort failed, in which case it is kept and both errors
+     * are reported. Must not run on the EDT.
      */
     fun rebaseWithStashCancellable(isCancelled: () -> Boolean, vararg flags: String): RebaseOutcome =
         stashThenRebase(flags) { runCancellableRebase(isCancelled, it.toList()) }
@@ -402,7 +465,17 @@ class GhStackService(private val project: Project) {
      * A finished rebase plus whether a cancellation cleanup failed to abort the cascade. A failed abort means the
      * working tree is still mid-rebase, so the stash must not be applied into it.
      */
-    private data class RebaseRun(val result: GhResult, val abortFailed: Boolean = false)
+    private data class RebaseRun(
+        val result: GhResult,
+        val abortFailed: Boolean = false,
+        val rolledBack: Boolean = false,
+    )
+
+    private fun RebaseRun.toOutcome(): RebaseOutcome = RebaseOutcome(
+        result,
+        rolledBack = rolledBack,
+        cleanupFailed = abortFailed,
+    )
 
     private fun stashThenRebase(
         flags: Array<out String>,
@@ -420,12 +493,18 @@ class GhStackService(private val project: Project) {
 
         val rebase = run(flags)
         val result = rebase.result
-        if (stash == null) return RebaseOutcome(result)
+        if (stash == null) return rebase.toOutcome()
         return when (decideStashRestore(result.succeeded, result.cancelled, rebase.abortFailed)) {
-            StashRestore.RESTORE -> RebaseOutcome(result, stashToRestore = stash)
+            StashRestore.RESTORE -> RebaseOutcome(
+                result,
+                stashToRestore = stash,
+                rolledBack = rebase.rolledBack,
+            )
+
             StashRestore.KEEP -> RebaseOutcome(
                 result.copy(stderr = withStashKeptHint(result.errorText(), message)),
                 stashKept = stash,
+                cleanupFailed = rebase.abortFailed,
             )
         }
     }
@@ -436,6 +515,11 @@ class GhStackService(private val project: Project) {
      * `flock`ed operation lock.
      */
     private fun runCancellableRebase(isCancelled: () -> Boolean, flags: List<String>): RebaseRun {
+        // Checked before anything touches the repository or starts `gh`, so a cancellation during a prompt or the
+        // stash cannot launch a rebase that would have to be killed straight away.
+        if (isCancelled()) {
+            return RebaseRun(GhResult(exitCode = 1, stdout = "", stderr = "", cancelled = true))
+        }
         val repo = selectedRepository() ?: error("This project is not under Git.")
         val journal = resolveGhStackRebaseStateFile(repo.root.toNioPath())
         val journalBefore = Files.exists(journal)
@@ -453,16 +537,18 @@ class GhStackService(private val project: Project) {
             isNoRebaseInProgress(abort) -> isRebasePaused(repo)
             else -> true
         }
-        if (!abortFailed) return RebaseRun(result)
-        val abortError = if (isNoRebaseInProgress(abort)) {
-            GhStackBundle.message("error.rebase.abort.incomplete")
-        } else {
-            abort.errorText()
+        if (abortFailed) {
+            val abortError = if (isNoRebaseInProgress(abort)) {
+                GhStackBundle.message("error.rebase.abort.incomplete")
+            } else {
+                abort.errorText()
+            }
+            return RebaseRun(
+                result.copy(stderr = "$abortError\n\n${result.errorText()}"),
+                abortFailed = true,
+            )
         }
-        return RebaseRun(
-            result.copy(stderr = "$abortError\n\n${result.errorText()}"),
-            abortFailed = true,
-        )
+        return RebaseRun(result, rolledBack = true)
     }
 
     /** Refreshes git4idea's cached repository state before reading the pause flag. Must not run on the EDT. */
