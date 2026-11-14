@@ -581,6 +581,6 @@ class GhStackService(private val project: Project) {
 
     private fun cliFor(root: Path): GhCli {
         val console = GhStackConsoleService.getInstance(project)
-        return GhCli(root, onCommandRun = console::record)
+        return GhCli(root, onCommandRun = console::record, onCommandStart = console::recordStart)
     }
 }

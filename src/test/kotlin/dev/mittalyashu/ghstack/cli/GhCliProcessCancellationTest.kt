@@ -2,6 +2,7 @@ package com.github.mittalyashu.ghstack.cli
 
 import com.intellij.openapi.util.SystemInfo
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -10,6 +11,7 @@ import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -81,6 +83,42 @@ class GhCliProcessCancellationTest {
         assertTrue(result.succeeded)
         assertFalse(result.cancelled)
         assertTrue(result.stdout.contains("rebased"))
+    }
+
+    @Test
+    fun `a cancelled run is reported when it starts and again when it is killed`() {
+        val startedFile = workingDirectory.resolve("started")
+        val gh = script(
+            """
+            #!/bin/sh
+            touch "$startedFile"
+            sleep 60
+            """.trimIndent(),
+        )
+        val started = AtomicBoolean(false)
+        val cancelled = AtomicBoolean(false)
+        val canceller = thread {
+            started.set(awaitFile(startedFile, timeoutMs = 5_000))
+            cancelled.set(true)
+        }
+        val starts = CopyOnWriteArrayList<String>()
+        val runs = CopyOnWriteArrayList<GhCommandRun>()
+
+        val result = GhCli(
+            workingDirectory,
+            configuredPath = { gh.toString() },
+            onCommandRun = { runs += it },
+            onCommandStart = { starts += it },
+        ).rebaseCancellable({ cancelled.get() })
+        canceller.join(5_000)
+
+        assertTrue("the scripted gh never started", started.get())
+        // Reporting the start is what keeps a cancelled rebase visible in the console after the process is killed.
+        assertEquals(1, starts.size)
+        assertTrue(starts.single().contains("rebase"))
+        assertEquals(1, runs.size)
+        assertTrue("the finished run must be marked cancelled", runs.single().cancelled)
+        assertTrue(result.cancelled)
     }
 
     private fun script(body: String): Path {
