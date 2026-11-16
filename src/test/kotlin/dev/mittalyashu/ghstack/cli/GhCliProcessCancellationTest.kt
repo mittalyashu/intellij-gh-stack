@@ -1,5 +1,6 @@
 package com.github.mittalyashu.ghstack.cli
 
+import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.util.SystemInfo
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -21,6 +22,9 @@ import kotlin.concurrent.thread
  *
  * The scripted `gh` needs a POSIX shell and the child-state assertion reads `/proc`, so only Linux runs these cases;
  * CI is Ubuntu.
+ *
+ * The handler used by the non-cancellable `GhCli.run` path is checked separately: it must kill its children too, so a
+ * timeout cannot leave a git process mutating the repository after the panel reports the failure.
  */
 class GhCliProcessCancellationTest {
     private lateinit var workingDirectory: Path
@@ -70,6 +74,31 @@ class GhCliProcessCancellationTest {
         val child = Files.readString(childPidFile).trim().toLong()
         assertTrue(
             "the git child must die with its gh parent",
+            awaitStopped(child, timeoutMs = 3_000),
+        )
+    }
+
+    @Test
+    fun `destroying a gh handler kills the git child it spawned`() {
+        val childPidFile = workingDirectory.resolve("child.pid")
+        val gh = script(
+            """
+            #!/bin/sh
+            sleep 60 &
+            echo ${'$'}! > "$childPidFile"
+            sleep 60
+            """.trimIndent(),
+        )
+
+        val handler = createProcessHandler(GeneralCommandLine(gh.toString()))
+        handler.startNotify()
+        assertTrue("the scripted gh never started", awaitFile(childPidFile, timeoutMs = 5_000))
+        handler.destroyProcess()
+        assertTrue("the handler must stop after being destroyed", handler.waitFor(5_000))
+
+        val child = Files.readString(childPidFile).trim().toLong()
+        assertTrue(
+            "a timed-out command must kill the git child too, not only the gh parent",
             awaitStopped(child, timeoutMs = 3_000),
         )
     }

@@ -96,7 +96,7 @@ class GhCli(
         log.debug("Running: ${commandLine.commandLineString} in $workingDirectory")
         reportStart(commandLine.commandLineString)
         val output: ProcessOutput = try {
-            CapturingProcessHandler(commandLine).runProcess(timeoutMs)
+            createProcessHandler(commandLine).runProcess(timeoutMs)
         } catch (e: ExecutionException) {
             log.warn("Could not start ${commandLine.exePath}", e)
             val result = GhResult(
@@ -130,11 +130,7 @@ class GhCli(
         log.debug("Running (cancellable): ${commandLine.commandLineString} in $workingDirectory")
         reportStart(commandLine.commandLineString)
         val handler = try {
-            CapturingProcessHandler(commandLine).apply {
-                // gh stack rebase spawns git children; kill the whole tree so a follow-up `--abort` cannot race a
-                // git rebase that is still running after its parent gh process is gone.
-                setShouldDestroyProcessRecursively(true)
-            }
+            createProcessHandler(commandLine)
         } catch (e: ExecutionException) {
             log.warn("Could not start ${commandLine.exePath}", e)
             val result = GhResult(
@@ -228,6 +224,16 @@ class GhCli(
         private const val REBASE_TIMEOUT_MS = 10 * 60_000
     }
 }
+
+/**
+ * The handler that runs a `gh` command. Killing it destroys the whole process tree: `gh stack` spawns git children,
+ * and a timeout or cancellation must not leave a git process mutating the repository (or racing a retry) after the
+ * plugin has reported the failure.
+ */
+internal fun createProcessHandler(commandLine: GeneralCommandLine): CapturingProcessHandler =
+    CapturingProcessHandler(commandLine).apply {
+        setShouldDestroyProcessRecursively(true)
+    }
 
 /** The `gh` arguments that initialize a stack from [branches] (bottom to top) on [base]. */
 internal fun initStackArgs(branches: List<String>, base: String?): List<String> = buildList {
