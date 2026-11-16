@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kill the whole `gh` process tree when a command times out, so a timed-out rebase cannot leave a `git` child running after the panel reports the failure
 - Show each `gh` command in the **Console** tab as soon as it starts, so a cancelled rebase and its cleanup remain visible even after the process is killed
 - Keep the **Rename branch** dialog's command preview steady while typing: it updates without re-wrapping the description or resizing on every keystroke
 - Stop using the deprecated `Disposer.isDisposed` API in the **Stack** and **Console** panels
